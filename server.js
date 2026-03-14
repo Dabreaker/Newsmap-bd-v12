@@ -22,7 +22,7 @@ const EXCL_M=400; // 400m×400m exclusivity zone per news item
 const MAX_BYTES=10*1024*1024*1024;
 const IS_VERCEL=!!process.env.VERCEL;
 const NEWS_DATA=path.join(DATA_ROOT,'news_data');
-const LOGS_DIR=path.join(__dirname,'logs');
+const LOGS_DIR=path.join(IS_VERCEL?'/tmp':__dirname,'logs');
 const CREDS_FILE=path.join(__dirname,'credentials.json');
 [NEWS_DATA,LOGS_DIR].forEach(d=>{if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true});});
 
