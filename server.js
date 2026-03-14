@@ -1,4 +1,4 @@
-```js
+
 'use strict';
 const fs=require('fs'),path=require('path');
 try{fs.readFileSync(path.join(__dirname,'.env'),'utf8').split('\n').forEach(l=>{const m=l.match(/^([^#=\s]+)\s*=\s*(.*)$/);if(m&&!process.env[m[1]])process.env[m[1]]=m[2].trim();});}catch{}
