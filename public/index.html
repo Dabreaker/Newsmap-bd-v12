@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="bn" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>BD News Map v11</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* ── THEME VARS ────────────────────────────────────────────── */
+:root{
+  --r:14px;--tabh:64px;--toph:52px;
+  --accent:#4c7bff;--green:#00d496;--red:#ff4b6e;--gold:#f5c842;
+}
+[data-theme="dark"]{
+  --bg:#080c18;--bg2:#0f1525;--bg3:#161d30;
+  --glass:rgba(255,255,255,0.055);--border:rgba(255,255,255,0.09);
+  --text:#e2e8ff;--muted:rgba(226,232,255,0.38);--shadow:0 4px 24px rgba(0,0,0,0.5);
+}
+[data-theme="light"]{
+  --bg:#f0f4ff;--bg2:#ffffff;--bg3:#e4e9f7;
+  --glass:rgba(0,0,0,0.04);--border:rgba(0,0,0,0.09);
+  --text:#0d1226;--muted:rgba(13,18,38,0.45);--shadow:0 4px 24px rgba(0,0,0,0.1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea,select{font-family:inherit;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:10px 13px;font-size:14px;width:100%;outline:none;transition:border-color .2s}
+input:focus,textarea:focus{border-color:var(--accent)}
+a{color:var(--accent);text-decoration:none}
+
+/* ── BISMILLAH BAR ─────────────────────────────────────────── */
+#bbar{position:fixed;top:0;left:0;right:0;z-index:2000;height:var(--toph);background:rgba(8,12,24,0.97);border-bottom:1px solid rgba(245,200,66,0.2);display:flex;align-items:center;justify-content:center;gap:10px;backdrop-filter:blur(16px)}
+[data-theme="light"] #bbar{background:rgba(240,244,255,0.97)}
+.bar-ar{font-size:15px;color:var(--gold);letter-spacing:.5px}
+.bar-sep{color:rgba(245,200,66,0.3);font-size:12px}
+.bar-bn{font-size:10px;color:rgba(245,200,66,0.6);font-weight:600;letter-spacing:.4px}
+
+/* ── SHELL ─────────────────────────────────────────────────── */
+#app{height:100dvh;padding-top:var(--toph);display:flex;flex-direction:column;overflow:hidden}
+#content-area{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── SCREENS ───────────────────────────────────────────────── */
+.screen{display:none;flex-direction:column;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--tabh)+12px)}
+.screen.active{display:flex;flex:1;min-height:0}
+#screen-map{overflow:hidden;padding-bottom:0}
+#screen-map.active{display:flex!important;flex-direction:column}
+#screen-report{overflow-y:auto;padding-bottom:0}
+#screen-report.active{display:flex;flex-direction:column}
+#screen-admin{padding-bottom:calc(var(--tabh)+12px)}
+
+/* ── HEADER ────────────────────────────────────────────────── */
+.shead{padding:12px 16px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px}
+.logo-img{width:34px;height:34px;border-radius:9px;object-fit:cover}
+.logo-fb{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#2040c0);display:none;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;flex-shrink:0}
+.bname{font-size:17px;font-weight:800}
+.bsub{font-size:10px;color:var(--muted);margin-top:1px}
+.head-actions{display:flex;gap:8px;align-items:center}
+.icon-btn{width:36px;height:36px;border-radius:10px;background:var(--glass);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;position:relative;transition:background .15s}
+.icon-btn:active{background:var(--bg3)}
+.notif-badge{position:absolute;top:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:var(--red);font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;color:#fff;display:none}
+
+/* ── VERSE CARD ────────────────────────────────────────────── */
+.vcard{margin:14px 16px;padding:14px 16px;background:var(--glass);border:1px solid rgba(245,200,66,0.15);border-radius:var(--r);position:relative;overflow:hidden}
+.vcard::before{content:'❝';position:absolute;top:4px;left:8px;font-size:28px;color:rgba(245,200,66,0.09);line-height:1}
+.vtext{font-size:13px;line-height:1.7;color:var(--text);padding-left:8px}
+.vref{font-size:10px;color:var(--gold);margin-top:6px;padding-left:8px;font-weight:600}
+
+/* ── GLASS CARDS ───────────────────────────────────────────── */
+.glass{background:var(--glass);border:1px solid var(--border);border-radius:var(--r)}
+.fw{padding:0 16px 8px}
+.slabel{font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+
+/* ── HOME CARDS ────────────────────────────────────────────── */
+.hcard{overflow:hidden;margin-bottom:12px}
+.h-img{width:100%;height:160px;object-fit:cover;display:block}
+.h-noimg{height:100px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--bg3)}
+.h-body{padding:12px}
+.htitle{font-size:16px;font-weight:700;line-height:1.35;margin-bottom:7px}
+.hmeta{display:flex;gap:10px;font-size:11px;color:var(--muted);margin-bottom:8px}
+.crow{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px}
+.mcard{overflow:hidden}
+.m-img,.m-noimg{height:78px;object-fit:cover;display:block;width:100%}
+.m-noimg{display:flex;align-items:center;justify-content:center;font-size:22px;background:var(--bg3)}
+.m-body{padding:8px}
+.m-title{font-size:12px;font-weight:600;line-height:1.3;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.m-meta{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--muted)}
+.lcard{display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:8px}
+.l-img{width:52px;height:52px;object-fit:cover;border-radius:9px;flex-shrink:0}
+.l-noimg{width:52px;height:52px;border-radius:9px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.l-body{flex:1;min-width:0}
+.l-title{font-size:13px;font-weight:600;line-height:1.3;margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.l-meta{font-size:11px;color:var(--muted)}
+.l-sc{font-size:12px;font-weight:800;flex-shrink:0;padding:4px 8px;border-radius:8px}
+
+/* ── BADGES ────────────────────────────────────────────────── */
+.hbadge{font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;display:inline-block;margin-bottom:7px}
+.breal{background:rgba(0,212,150,0.15);color:var(--green)}
+.bfake{background:rgba(255,75,110,0.15);color:var(--red)}
+.bneu{background:rgba(76,123,255,0.12);color:var(--accent)}
+.sp{font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px}
+.sp-r{background:rgba(0,212,150,0.15);color:var(--green)}
+.sp-f{background:rgba(255,75,110,0.15);color:var(--red)}
+.sc-r{color:var(--green)}
+.sc-f{color:var(--red)}
+
+/* ── TRUTH BAR ─────────────────────────────────────────────── */
+.tbw{height:4px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:4px}
+.tb{height:100%;background:linear-gradient(90deg,var(--green),#009870);border-radius:4px;transition:width .4s}
+
+/* ── MAP ───────────────────────────────────────────────────── */
+#map-wrap{flex:1;position:relative;min-height:0}
+#map{position:absolute;inset:0;background:var(--bg)}
+#map-info{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(8,12,24,0.9);color:var(--text);padding:5px 13px;border-radius:17px;font-size:11px;font-weight:600;border:1px solid var(--border);z-index:400;pointer-events:none;white-space:nowrap}
+#map-fab{position:absolute;bottom:18px;right:14px;z-index:500;width:44px;height:44px;border-radius:50%;background:var(--accent);box-shadow:0 4px 16px rgba(76,123,255,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px}
+#map-filter{position:absolute;top:10px;right:14px;z-index:400;display:flex;flex-direction:column;gap:5px}
+.mfbtn{background:rgba(8,12,24,0.9);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:10px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap}
+.mfbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.nm-pin{border-radius:4px;border:2.5px solid #fff;box-shadow:0 2px 12px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transition:transform .1s}
+.nm-pin:active{transform:scale(.92)}
+.nm-noimg{font-size:14px}
+.pr{border-color:var(--green)}
+.pf{border-color:var(--red)}
+.pn{border-color:var(--accent)}
+
+/* ── REPORT MAP ────────────────────────────────────────────── */
+#rmap-wrap{position:relative;flex-shrink:0}
+#report-map{height:260px}
+#rmap-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(8,12,24,0.88);color:var(--text);padding:6px 14px;border-radius:14px;font-size:12px;font-weight:600;border:1px solid var(--border);pointer-events:none;white-space:nowrap;z-index:400}
+#rmap-st{display:none;position:absolute;bottom:10px;left:50%;transform:translateX(-50%);padding:6px 14px;border-radius:14px;font-size:12px;font-weight:700;border:1px solid var(--border);pointer-events:none;white-space:nowrap;z-index:400;background:rgba(8,12,24,0.92)}
+.rst-ok{color:var(--green)!important;border-color:var(--green)!important}
+.rst-bad{color:var(--red)!important;border-color:var(--red)!important}
+.rst-cell{color:var(--gold)!important;border-color:var(--gold)!important}
+.rscroll{padding:14px 16px;flex:1;overflow-y:auto;padding-bottom:calc(var(--tabh)+20px)}
+.rform{display:flex;flex-direction:column;gap:14px}
+.flabel{font-size:11px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
+.fi,.fta{display:block}
+.fta{resize:vertical;min-height:78px}
+.img-lbl{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--bg3);border:1.5px dashed var(--border);border-radius:11px;cursor:pointer}
+#img-prev{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+#img-prev img{width:60px;height:60px;object-fit:cover;border-radius:8px}
+.btn-p{width:100%;padding:14px;border-radius:var(--r);background:linear-gradient(135deg,var(--accent),#2040c0);color:#fff;font-size:15px;font-weight:700;letter-spacing:.3px;transition:opacity .15s,transform .1s}
+.btn-p:active{opacity:.85;transform:scale(.98)}
+
+/* ── MODAL ─────────────────────────────────────────────────── */
+#modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1500;display:none;align-items:flex-end;backdrop-filter:blur(4px)}
+#modal-overlay.open{display:flex}
+#modal-content{width:100%;max-width:520px;margin:0 auto;background:var(--bg2);border-radius:22px 22px 0 0;border-top:1px solid var(--border);padding:16px 16px 32px;max-height:90dvh;overflow-y:auto;animation:sup .25s cubic-bezier(.2,.8,.4,1)}
+@keyframes sup{from{transform:translateY(60px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mcar{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+.mcar::-webkit-scrollbar{display:none}
+.mslide{position:relative;flex-shrink:0;width:100%}
+.mcar-n{position:absolute;top:6px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 7px;border-radius:8px}
+.noimgph{text-align:center;padding:24px 0 12px;font-size:13px;color:var(--muted)}
+.modal-actions{display:flex;gap:7px;margin-bottom:12px}
+.mac-btn{flex:1;padding:9px 6px;border-radius:10px;background:var(--glass);border:1px solid var(--border);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;transition:background .15s;white-space:nowrap}
+.mac-btn:active{background:var(--bg3)}
+.mtitle{font-size:18px;font-weight:700;line-height:1.35;margin-bottom:9px}
+.mchips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.mchip{font-size:11px;padding:4px 10px;background:var(--glass);border:1px solid var(--border);border-radius:20px}
+.mchip-w{border-color:var(--red)!important;color:var(--red)}
+.mdesc{font-size:13px;line-height:1.7;margin-bottom:12px;color:var(--text);opacity:.88}
+.tbox{background:var(--glass);border:1px solid var(--border);border-radius:11px;padding:12px;margin-bottom:12px}
+.tbls{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:5px}
+.tbr{color:var(--green)}.tbf{color:var(--red)}
+.tbpct{font-size:11px;color:var(--muted);margin-top:5px;text-align:center}
+.vrow{display:flex;gap:10px;margin-bottom:8px}
+.bvote{flex:1;padding:12px;border-radius:11px;font-size:14px;font-weight:700;transition:opacity .15s}
+.bvr{background:rgba(0,212,150,.15);border:1.5px solid var(--green);color:var(--green)}
+.bvf{background:rgba(255,75,110,.15);border:1.5px solid var(--red);color:var(--red)}
+.bvote:disabled{opacity:.38;cursor:not-allowed}
+.vhint{font-size:11px;color:var(--muted);text-align:center;margin-bottom:12px}
+.mlinks{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.ditem{background:var(--glass);border:1px solid var(--border);border-radius:9px;padding:8px 10px}
+.dlbl{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.dval{font-size:12px;font-weight:600}
+.bdel{width:100%;padding:11px;border-radius:10px;background:rgba(255,75,110,.1);border:1.5px solid var(--red);color:var(--red);font-size:13px;font-weight:700;margin-top:4px}
+.expire-bar{background:var(--glass);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:11px;margin-bottom:12px;text-align:center}
+.expire-bar span{color:var(--gold);font-weight:700}
+
+/* ── AUTH ──────────────────────────────────────────────────── */
+#auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1600;display:none;align-items:flex-end;backdrop-filter:blur(4px)}
+#auth-overlay.open{display:flex}
+#auth-sheet{width:100%;max-width:520px;margin:0 auto;background:var(--bg2);border-radius:22px 22px 0 0;border-top:1px solid var(--border);padding:0 18px 30px;animation:sup .28s cubic-bezier(.2,.8,.4,1);max-height:90dvh;overflow-y:auto}
+.sh-handle{width:36px;height:4px;background:var(--border);border-radius:4px;margin:12px auto 0}
+.sh-icon{font-size:30px;text-align:center;margin:14px 0 6px}
+.sh-title{font-size:19px;font-weight:800;text-align:center;margin-bottom:3px}
+.sh-sub{font-size:12px;color:var(--muted);text-align:center;margin-bottom:18px}
+.auth-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:12px}
+
+/* ── NOTIFICATIONS ─────────────────────────────────────────── */
+.notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px;margin-bottom:7px;cursor:pointer}
+.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px}
+.notif-dot.seen{background:var(--border)}
+.notif-title{font-size:13px;font-weight:600;margin-bottom:2px}
+.notif-meta{font-size:11px;color:var(--muted)}
+
+/* ── HISTORY ───────────────────────────────────────────────── */
+.hist-card{display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:8px;cursor:pointer}
+.hist-thumb{width:50px;height:50px;object-fit:cover;border-radius:9px;flex-shrink:0;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px}
+.hist-info{flex:1;min-width:0}
+.hist-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.hist-meta{font-size:11px;color:var(--muted)}
+
+/* ── ADMIN PANEL ───────────────────────────────────────────── */
+.adm-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.adm-stat{background:var(--glass);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;text-align:center}
+.adm-stat-val{font-size:26px;font-weight:900;color:var(--accent)}
+.adm-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+.adm-tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.adm-tab{padding:7px 14px;border-radius:10px;font-size:12px;font-weight:700;background:var(--glass);border:1px solid var(--border);white-space:nowrap;cursor:pointer;transition:all .15s}
+.adm-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.adm-search{margin-bottom:10px}
+.adm-row{display:flex;align-items:center;gap:8px;padding:10px;background:var(--glass);border:1px solid var(--border);border-radius:11px;margin-bottom:7px}
+.adm-row-info{flex:1;min-width:0}
+.adm-row-title{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-row-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.adm-btn{padding:5px 10px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .15s;border:1px solid}
+.adm-del{background:rgba(255,75,110,.1);border-color:var(--red);color:var(--red)}
+.adm-ban{background:rgba(245,200,66,.1);border-color:var(--gold);color:var(--gold)}
+.adm-unban{background:rgba(0,212,150,.1);border-color:var(--green);color:var(--green)}
+.adm-purge{background:rgba(255,75,110,.07);border-color:var(--red);color:var(--red);font-size:10px}
+
+/* ── DONATION ──────────────────────────────────────────────── */
+.donate-card{margin:20px 0 8px;padding:16px}
+.dc-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.dc-msg{font-size:13px;line-height:1.65;color:var(--text);margin-bottom:14px;padding:10px 12px;background:rgba(245,200,66,.07);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;opacity:.85}
+.dc-methods{display:flex;flex-direction:column;gap:8px}
+.dc-method{display:flex;align-items:center;gap:12px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:10px 13px;cursor:pointer;transition:border-color .18s}
+.dc-method:active{border-color:var(--accent)}
+.dc-logo{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0}
+.dc-info{flex:1}.dc-label{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);text-transform:uppercase}
+.dc-num{font-size:15px;font-weight:800;letter-spacing:.5px;margin-top:1px}
+.dc-footer{text-align:center;font-size:10px;color:var(--muted);margin-top:12px}
+
+/* ── MISC ──────────────────────────────────────────────────── */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;text-align:center;gap:12px;min-height:220px}
+.ei{font-size:42px}.empty p{font-size:13px;color:var(--muted);line-height:1.7}
+.sp-box{display:flex;align-items:center;justify-content:center;min-height:150px;gap:5px}
+.sp-box b{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:sp .8s ease-in-out infinite alternate}
+.sp-box b:nth-child(2){animation-delay:.3s}.sp-box b:nth-child(3){animation-delay:.6s}
+@keyframes sp{from{opacity:.2;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+.toast{position:fixed;bottom:calc(var(--tabh)+14px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 18px;border-radius:14px;font-size:13px;font-weight:600;z-index:3000;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:var(--red);color:var(--red)}
+.uhero{text-align:center;padding:28px 20px 16px}
+.uav{font-size:52px;margin-bottom:10px}
+.uname{font-size:18px;font-weight:800;margin-bottom:4px}
+.usub{font-size:12px;color:var(--muted)}
+.search-wrap{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:9px 13px}
+.search-inp{flex:1;background:none;border:none;outline:none;font-size:14px;color:var(--text)}
+.search-inp::placeholder{color:var(--muted)}
+#home-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;cursor:pointer;flex-shrink:0;display:none}
+
+/* ── TABBAR ────────────────────────────────────────────────── */
+#tabbar{position:fixed;bottom:0;left:0;right:0;height:var(--tabh);background:rgba(8,12,24,0.97);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:1000;backdrop-filter:blur(20px)}
+[data-theme="light"] #tabbar{background:rgba(240,244,255,0.97)}
+.tbb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:9.5px;font-weight:700;letter-spacing:.5px;transition:color .15s;-webkit-tap-highlight-color:transparent}
+.tbb.active{color:var(--accent)}
+.tbi{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+.tbi svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tbb[data-tab="report"] .tbi{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#2040c0);box-shadow:0 4px 18px rgba(76,123,255,.4);margin-top:-10px}
+.tbb[data-tab="report"] .tbi svg{stroke:#fff;width:20px;height:20px}
+.tbb-notif-dot{width:7px;height:7px;border-radius:50%;background:var(--red);position:absolute;top:10px;right:calc(50% - 18px);display:none}
+
+/* ── DESKTOP ────────────────────────────────────────────────── */
+@media(min-width:900px){
+  #tabbar{display:none!important}
+  #bbar{left:240px}
+  #app{flex-direction:row;padding-top:0}
+  #desktop-nav{width:240px;height:100dvh;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:calc(var(--toph)+12px) 10px 16px;position:fixed;top:0;left:0;z-index:100;flex-shrink:0}
+  #content-area{margin-left:240px;padding-top:var(--toph);height:calc(100dvh - var(--toph));flex:1;min-width:0}
+  .screen{padding-bottom:0}
+  #screen-home,#screen-explore,#screen-user,#screen-admin{overflow-y:auto}
+  #screen-map{flex:1}
+  #screen-report{overflow-y:auto}
+  #map-wrap{flex:1;min-height:0}
+  .dn-btn{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;font-size:13px;font-weight:600;color:var(--muted);transition:all .15s;cursor:pointer;width:100%;text-align:left;margin-bottom:2px}
+  .dn-btn:hover{background:var(--glass);color:var(--text)}
+  .dn-btn.active{background:rgba(76,123,255,.15);color:var(--accent)}
+  .dn-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .dn-btn.active svg{stroke-width:2.3}
+  .dn-spacer{flex:1}
+  .dn-appname{font-size:14px;font-weight:800}
+  .dn-tagline{font-size:10px;color:var(--muted);margin-top:1px}
+  #modal-overlay{align-items:center}
+  #modal-content{border-radius:18px;margin:20px auto}
+  #auth-overlay{align-items:center}
+  #auth-sheet{border-radius:18px;margin:20px auto}
+  .vcard{max-width:720px;margin-left:auto;margin-right:auto}
+  .fw{max-width:720px;margin:0 auto}
+}
+@media(min-width:1200px){
+  #desktop-nav{width:260px}
+  #content-area{margin-left:260px}
+  #bbar{left:260px}
+  .vcard,.fw{max-width:800px}
+}
+</style>
+</head>
+<body>
+<div id="bbar">
+  <span class="bar-ar">بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ</span>
+  <span class="bar-sep">·</span>
+  <span class="bar-bn" id="bismillah-text">পরম করুণাময়ের নামে শুরু</span>
+</div>
+
+<!-- DESKTOP NAV -->
+<nav id="desktop-nav" style="display:none">
+  <div style="display:flex;align-items:center;gap:9px;padding:0 4px 18px;border-bottom:1px solid var(--border);margin-bottom:12px">
+    <img src="/logo.png" style="width:32px;height:32px;border-radius:8px;object-fit:cover" onerror="this.style.display='none'" alt="">
+    <div><div class="dn-appname">BD News Map v11</div><div class="dn-tagline" id="tagline-dn">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
+  </div>
+  <button class="dn-btn active" data-tab="home" onclick="switchTab('home')">
+    <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span data-i18n="home">হোম</span>
+  </button>
+  <button class="dn-btn" data-tab="map" onclick="switchTab('map')">
+    <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg><span data-i18n="map">মানচিত্র</span>
+  </button>
+  <button class="dn-btn" data-tab="explore" onclick="switchTab('explore')">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span data-i18n="explore">অন্বেষণ</span>
+  </button>
+  <button class="dn-btn" data-tab="notify" onclick="switchTab('notify')" style="position:relative">
+    <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><span data-i18n="notif">বিজ্ঞপ্তি</span>
+    <span class="tbb-notif-dot" id="dn-notif-dot" style="position:absolute;top:8px;left:26px"></span>
+  </button>
+  <div class="dn-spacer"></div>
+  <button class="dn-btn dn-report" data-tab="report" onclick="switchTab('report')">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg><span data-i18n="report">সংবাদ রিপোর্ট</span>
+  </button>
+  <button class="dn-btn" data-tab="user" onclick="switchTab('user')" style="margin-top:4px">
+    <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span data-i18n="account">আমার অ্যাকাউন্ট</span>
+  </button>
+</nav>
+
+<div id="app">
+<div id="content-area">
+
+<!-- HOME -->
+<div id="screen-home" class="screen active">
+  <div class="shead">
+    <div class="brand">
+      <img src="/logo.png" class="logo-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="logo-fb">BD</div>
+      <div><div class="bname">BD News Map v11</div><div class="bsub" id="tagline-hd" data-i18n-sub="tagline">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
+    </div>
+    <div class="head-actions">
+      <div id="home-badge" class="hbadge bneu" onclick="switchTab('map')"></div>
+      <button class="icon-btn" onclick="switchTab('notify')" title="বিজ্ঞপ্তি">🔔<span class="notif-badge" id="notif-badge"></span></button>
+      <button class="icon-btn" onclick="toggleTheme()" id="theme-btn" title="Theme">🌙</button>
+      <button class="icon-btn" onclick="toggleLang()" id="lang-btn" title="Language">EN</button>
+    </div>
+  </div>
+  <div id="vh" class="vcard"></div>
+  <div id="ptr-bar" style="display:none;text-align:center;padding:8px;font-size:12px;color:var(--muted)">🔄 <span data-i18n="pull_refresh">টেনে ধরুন রিফ্রেশ করতে</span></div>
+  <div class="fw" id="home-content"><div class="sp-box"><b></b><b></b><b></b></div></div>
+</div>
+
+<!-- MAP -->
+<div id="screen-map" class="screen">
+  <div class="shead">
+    <div class="brand"><div><div class="bname" data-i18n="map">মানচিত্র</div><div class="bsub">১০কিমি×১০কিমি · ৪০০মি এলাকা</div></div></div>
+    <div class="head-actions">
+      <button class="icon-btn" id="map-refresh-btn" onclick="forceMapRefresh()" title="Refresh">🔄</button>
+    </div>
+  </div>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="map-info">অবস্থান নির্ধারণ হচ্ছে…</div>
+    <div id="map-filter">
+      <button class="mfbtn on" id="mf-all" onclick="setMapFilter('all')">সব</button>
+      <button class="mfbtn" id="mf-real" onclick="setMapFilter('real')">✓ সত্য</button>
+      <button class="mfbtn" id="mf-fake" onclick="setMapFilter('fake')">✗ মিথ্যা</button>
+    </div>
+    <button id="map-fab" onclick="locateMe()">⊕</button>
+  </div>
+</div>
+
+<!-- EXPLORE -->
+<div id="screen-explore" class="screen">
+  <div class="shead"><div class="brand"><div><div class="bname" data-i18n="explore">অন্বেষণ</div><div class="bsub" data-i18n="explore_sub">আশেপাশের সব সংবাদ</div></div></div></div>
+  <div style="padding:10px 16px 0"><div class="search-wrap"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="explore-search" class="search-inp" placeholder="সংবাদ খুঁজুন…" oninput="filterExplore(this.value)" autocomplete="off"></div></div>
+  <div class="fw" id="explore-content"><div class="sp-box"><b></b><b></b><b></b></div></div>
+</div>
+
+<!-- NOTIFICATIONS -->
+<div id="screen-notify" class="screen">
+  <div class="shead"><div class="brand"><div><div class="bname" data-i18n="notif">বিজ্ঞপ্তি</div><div class="bsub" data-i18n="notif_sub">আশেপাশের নতুন সংবাদ</div></div></div>
+    <button class="icon-btn" onclick="markAllSeen()" title="Mark all seen" style="font-size:12px;width:auto;padding:0 10px">✓ সব</button>
+  </div>
+  <div id="notify-content" class="fw" style="padding-top:12px"><div class="sp-box"><b></b><b></b><b></b></div></div>
+</div>
+
+<!-- USER -->
+<div id="screen-user" class="screen">
+  <div class="shead"><div class="brand"><div><div class="bname" data-i18n="account">আমার অ্যাকাউন্ট</div></div></div></div>
+  <div id="user-content"></div>
+</div>
+
+<!-- REPORT -->
+<div id="screen-report" class="screen">
+  <div class="shead">
+    <div class="brand"><div><div class="bname" data-i18n="report">সংবাদ <span style="color:var(--accent)">রিপোর্ট</span></div><div class="bsub">৪০০মি×৪০০মি এলাকায় পিন করুন</div></div></div>
+  </div>
+  <div id="rmap-wrap">
+    <div id="report-map"></div>
+    <div id="rmap-hint">📍 মানচিত্রে ট্যাপ করে পিন করুন</div>
+    <div id="rmap-st"></div>
+  </div>
+  <div class="rscroll"><div class="rform">
+    <div><div class="flabel" data-i18n="title">শিরোনাম *</div><input class="fi" id="r-title" placeholder="কী ঘটেছে?" maxlength="120"></div>
+    <div><div class="flabel" data-i18n="desc">বিবরণ</div><textarea class="fta" id="r-desc" placeholder="বিস্তারিত লিখুন…" maxlength="1000"></textarea></div>
+    <div><div class="flabel">সূত্র লিঙ্ক</div><input class="fi" id="r-links" placeholder="https://…" type="url"></div>
+    <div>
+      <div class="flabel">ছবি (সর্বোচ্চ ১০টি)</div>
+      <label class="img-lbl" for="r-images">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span style="color:var(--muted);font-size:13px">ছবি যোগ করুন</span>
+      </label>
+      <input type="file" id="r-images" accept="image/*" multiple style="display:none" onchange="prevImgs(this)">
+      <div id="img-prev"></div>
+    </div>
+    <button class="btn-p" id="submit-btn" onclick="submitReport()" data-i18n="publish">প্রকাশ করুন</button>
+  </div></div>
+</div>
+
+<!-- ADMIN -->
+<div id="screen-admin" class="screen">
+  <div class="shead"><div class="brand"><div><div class="bname">⚙️ অ্যাডমিন প্যানেল</div><div class="bsub">BD News Map v11</div></div></div></div>
+  <div id="admin-content" style="padding:12px 16px"><div class="sp-box"><b></b><b></b><b></b></div></div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" onclick="closeModal(event)"><div id="modal-content"></div></div>
+
+<!-- AUTH -->
+<div id="auth-overlay" onclick="closeAuthBg(event)">
+  <div id="auth-sheet">
+    <div class="sh-handle"></div>
+    <div class="sh-icon">🕌</div>
+    <div class="sh-title">BD News Map v11</div>
+    <div class="sh-sub" data-i18n="login_sub">সংবাদ রিপোর্ট করতে লগইন করুন</div>
+    <form id="auth-form" action="javascript:void(0)" autocomplete="on" onsubmit="doAuth(event)">
+      <div style="margin-bottom:11px"><div class="flabel" data-i18n="phone">ফোন নম্বর</div>
+        <input class="fi" id="a-phone" name="tel" type="tel" autocomplete="tel" inputmode="numeric" placeholder="01XXXXXXXXX" required></div>
+      <div style="margin-bottom:14px"><div class="flabel" data-i18n="password">পাসওয়ার্ড</div>
+        <input class="fi" id="a-pass" name="password" type="password" autocomplete="current-password" placeholder="পাসওয়ার্ড লিখুন" required minlength="6"></div>
+      <button type="submit" class="btn-p" id="auth-btn" data-i18n="enter">প্রবেশ করুন</button>
+    </form>
+    <div class="auth-hint" data-i18n="auth_hint">শুধুমাত্র অনুমোদিত সদস্যরা প্রবেশ করতে পারবেন</div>
+  </div>
+</div>
+
+</div><!-- /content-area -->
+<div id="toast"></div>
+
+<nav id="tabbar">
+  <button class="tbb active" data-tab="home" onclick="switchTab('home')">
+    <div class="tbi"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <span data-i18n="home">হোম</span>
+  </button>
+  <button class="tbb" data-tab="map" onclick="switchTab('map')">
+    <div class="tbi"><svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg></div>
+    <span data-i18n="map">মানচিত্র</span>
+  </button>
+  <button class="tbb" data-tab="report" onclick="switchTab('report')">
+    <div class="tbi"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
+    <span data-i18n="report_short">রিপোর্ট</span>
+  </button>
+  <button class="tbb" data-tab="notify" onclick="switchTab('notify')" style="position:relative">
+    <div class="tbi"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div>
+    <span class="tbb-notif-dot" id="tb-notif-dot"></span>
+    <span data-i18n="notif_short">বিজ্ঞপ্তি</span>
+  </button>
+  <button class="tbb" data-tab="user" onclick="switchTab('user')">
+    <div class="tbi"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+    <span data-i18n="me">আমি</span>
+  </button>
+</nav>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
