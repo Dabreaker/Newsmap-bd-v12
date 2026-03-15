@@ -65,18 +65,29 @@ async function getUserByPhone(phone) {
   const data = await getUsers();
   const id = data._phone[phone];
   if (!id) return null;
-  return data[id] || null;
+  const u = data[id];
+  if (!u) return null;
+  return { ...u, banned: u.banned === true };
 }
 
 async function getUserById(id) {
   const data = await getUsers();
-  return data[id] || null;
+  const u = data[id];
+  if (!u) return null;
+  return { ...u, banned: u.banned === true };
+}
+
+// Returns current user count without modifying anything
+async function peekUserCount() {
+  const data = await getUsers();
+  return data._count || 0;
 }
 
 async function createUser(userData) {
   const data = await getUsers();
   data._count = (data._count || 0) + 1;
   const id = data._count;
+  // userData must already contain all fields (username, admin, banned, etc.)
   const user = { ...userData, id };
   data[id] = user;
   data._phone[userData.phone] = id;
@@ -94,8 +105,9 @@ async function updateUser(id, patch) {
 
 async function getAllUsers(limit = 200) {
   const data = await getUsers();
-  return Object.values(data)
-    .filter(v => v && typeof v === 'object' && v.id)
+  return Object.entries(data)
+    .filter(([k, v]) => k !== '_phone' && k !== '_count' && v && typeof v === 'object' && v.id)
+    .map(([, v]) => ({ ...v, banned: v.banned === true })) // normalise banned
     .sort((a, b) => b.created_at - a.created_at)
     .slice(0, limit);
 }
@@ -258,7 +270,7 @@ async function decrStat(key, by = 1) {
 function nowSec() { return Math.floor(Date.now() / 1000); }
 
 module.exports = {
-  getUserByPhone, getUserById, createUser, updateUser, getAllUsers,
+  getUserByPhone, getUserById, createUser, updateUser, getAllUsers, peekUserCount,
   getNews, createNews, deleteNews, getCellOccupant, getRegionNews, getOwnerNews,
   upsertVote, computeScores, enrichNews,
   getNotifications, addNotification, markNotificationsSeen,

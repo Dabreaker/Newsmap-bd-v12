@@ -99,10 +99,17 @@ app.post('/api/register', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
     const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(p => p.trim());
-    const user = await store.createUser({ phone, password_hash, trust_score: 1.0, banned: false, created_at: nowSec() });
-    const username = anonName(user.id);
+    // Get current count first to compute the id and username atomically
+    const tempData = await store.peekUserCount();
+    const nextId = (tempData || 0) + 1;
+    const username = anonName(nextId);
     const isAdmin = adminPhones.includes(phone);
-    await store.updateUser(user.id, { username, admin: isAdmin });
+    const user = await store.createUser({
+      phone, password_hash,
+      username, admin: isAdmin,
+      trust_score: 1.0, banned: false,
+      created_at: nowSec()
+    });
 
     const token = jwt.sign({ id: user.id, username, admin: isAdmin }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, anon_id: user.id, username, admin: isAdmin });
@@ -118,7 +125,7 @@ app.post('/api/login', async (req, res) => {
 
     const user = await store.getUserByPhone(phone);
     if (!user) return res.status(401).json({ error: 'Phone or password incorrect' });
-    if (user.banned) return res.status(403).json({ error: 'Account banned' });
+    if (user.banned === true) return res.status(403).json({ error: 'Account banned' });
 
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'Phone or password incorrect' });
@@ -149,7 +156,7 @@ app.post('/api/news', authMiddleware, upload.array('images', 10), async (req, re
       store.getUserById(req.user.id)
     ]);
     if (occupant) return res.status(409).json({ error: 'Cell already occupied' });
-    if (!user || user.banned) return res.status(403).json({ error: 'Account banned' });
+    if (!user || user.banned === true) return res.status(403).json({ error: 'Account banned' });
 
     const id = uid();
     const imageUrls = await uploadImages(req.files, id);
