@@ -187,13 +187,20 @@ function switchTab(name){
 }
 
 // ── MARKER MANAGER — geo-accurate 50×50m blocks, scale with zoom ──
-// Each news item is an L.imageOverlay (or SVG overlay) spanning exactly the
-// 50×50m cell bounds. It grows/shrinks naturally as you zoom — just like
-// any geo feature. No fixed-px icon. Clicking opens the map card.
+// Layer order per cell (bottom → top):
+//   1. imageOverlay  — photo fills cell, interactive:false (no click handling)
+//   2. border rect   — colored stroke + faint fill, interactive:false
+//   3. hit rect      — fully transparent, interactive:true, captures all taps
+// This guarantees clicks always fire on mobile regardless of overlay type.
 const NM={markers:{},_busy:false,
   reset(){
     Object.values(this.markers).forEach(m=>{
-      if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.border)MAP.removeLayer(m.border);}
+      if(MAP){
+        if(m.img)MAP.removeLayer(m.img);
+        if(m.border)MAP.removeLayer(m.border);
+        if(m.hit)MAP.removeLayer(m.hit);
+        if(m.lbl)MAP.removeLayer(m.lbl);
+      }
     });
     this.markers={};
   },
@@ -216,57 +223,47 @@ const NM={markers:{},_busy:false,
       const clat=+n.lat, clon=+n.lon;
       const diff=(+n.real_score)-(+n.fake_score);
       const col=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
-      // Cell bounds — exactly 50×50m in geo coordinates
       const bounds=[
         [clat-GRID_DLAT/2, clon-GRID_DLON/2],
         [clat+GRID_DLAT/2, clon+GRID_DLON/2]
       ];
       if(!this.markers[n.id]){
-        // Colored border rectangle (always visible, even without image)
-        const border=L.rectangle(bounds,{
-          color:col,weight:2,opacity:0.9,
-          fillColor:col,fillOpacity:0.08,
-          interactive:false,
-        }).addTo(MAP);
-        // Image overlay fills the exact 50×50m cell — scales with zoom
-        let layer;
+        // 1. Photo layer (bottom) — non-interactive, just visual
+        let img=null;
         if(n.thumb){
-          layer=L.imageOverlay(n.thumb, bounds, {
-            opacity:1, interactive:true, crossOrigin:'anonymous',
-            className:'nm-cell-img',
+          img=L.imageOverlay(n.thumb,bounds,{
+            opacity:1,interactive:false,crossOrigin:'anonymous',className:'nm-cell-img',
           }).addTo(MAP);
         } else {
-          // No image — just a semi-transparent colored fill that's clickable
-          layer=L.rectangle(bounds,{
-            color:col,weight:0,opacity:0,
-            fillColor:col,fillOpacity:0.22,
-            interactive:true,
-          }).addTo(MAP);
-          // Add a small centered label via a divIcon marker
+          // No photo — emoji label centered in cell
           const icon=L.divIcon({
-            html:`<div style="font-size:18px;line-height:1;pointer-events:none;">📰</div>`,
+            html:`<div style="font-size:20px;line-height:1;pointer-events:none;text-align:center;">📰</div>`,
             iconSize:[24,24],iconAnchor:[12,12],className:'',
           });
-          const lbl=L.marker([clat,clon],{icon,interactive:false,keyboard:false}).addTo(MAP);
-          this.markers[n.id]={layer,border,lbl,col,thumb:''};
-          layer.on('click',()=>openModal(n.id));
-          border.on('click',()=>openModal(n.id));
-          return;
+          img=L.marker([clat,clon],{icon,interactive:false,keyboard:false}).addTo(MAP);
         }
-        layer.on('click',()=>openModal(n.id));
-        border.on('click',()=>openModal(n.id));
-        this.markers[n.id]={layer,border,lbl:null,col,thumb:n.thumb||''};
+        // 2. Border rect — colored stroke, non-interactive
+        const border=L.rectangle(bounds,{
+          color:col,weight:2,opacity:0.9,
+          fillColor:col,fillOpacity:n.thumb?0:0.18,
+          interactive:false,
+        }).addTo(MAP);
+        // 3. Hit rect — fully transparent, ONLY this captures clicks/taps
+        const hit=L.rectangle(bounds,{
+          color:'transparent',weight:0,
+          fillColor:'transparent',fillOpacity:0,
+          interactive:true,
+        }).addTo(MAP);
+        hit.on('click',e=>{L.DomEvent.stopPropagation(e);openModal(n.id);});
+        this.markers[n.id]={img,border,hit,lbl:null,col,thumb:n.thumb||''};
       } else {
         const m=this.markers[n.id];
-        // Update color if score changed
         if(col!==m.col){
           m.border.setStyle({color:col,fillColor:col});
-          if(m.layer.setStyle) m.layer.setStyle({fillColor:col});
           m.col=col;
         }
-        // Update image if thumb changed
         if(n.thumb&&n.thumb!==m.thumb){
-          if(m.layer.setUrl) m.layer.setUrl(n.thumb);
+          if(m.img&&m.img.setUrl)m.img.setUrl(n.thumb);
           m.thumb=n.thumb;
         }
       }
@@ -274,8 +271,9 @@ const NM={markers:{},_busy:false,
     Object.entries(this.markers).forEach(([id,m])=>{
       if(!seen.has(id)){
         if(MAP){
-          if(m.layer)MAP.removeLayer(m.layer);
+          if(m.img)MAP.removeLayer(m.img);
           if(m.border)MAP.removeLayer(m.border);
+          if(m.hit)MAP.removeLayer(m.hit);
           if(m.lbl)MAP.removeLayer(m.lbl);
         }
         delete this.markers[id];
