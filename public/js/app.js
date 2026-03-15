@@ -1,5 +1,5 @@
 'use strict';
-// BD News Map v15
+// BD News Map v16
 
 // ══════════════════════════════════════════════════════════════
 // I18N — English / Bengali
@@ -126,6 +126,19 @@ function setMapFilter(f){
 // ── GEOHASH ───────────────────────────────────────────────────
 (()=>{const B='0123456789bcdefghjkmnpqrstuvwxyz';function enc(lat,lon,p){let i=0,b=0,e=true,h='';let la=-90,La=90,lo=-180,Lo=180;while(h.length<p){if(e){const m=(lo+Lo)/2;if(lon>m){i=(i<<1)|1;lo=m;}else{i<<=1;Lo=m;}}else{const m=(la+La)/2;if(lat>m){i=(i<<1)|1;la=m;}else{i<<=1;La=m;}}e=!e;if(++b===5){h+=B[i];b=0;i=0;}}return h;}window._gh={enc};})();
 
+// ── GRID — 50×50m, matches server exactly ────────────────────
+const GRID_DLAT = 50 / 111000;
+const GRID_DLON = 50 / (111000 * Math.cos(23.5 * Math.PI / 180));
+function snapToCell(lat, lon) {
+  const ci = Math.floor(lat / GRID_DLAT);
+  const cj = Math.floor(lon / GRID_DLON);
+  return {
+    lat: (ci + 0.5) * GRID_DLAT,
+    lon: (cj + 0.5) * GRID_DLON,
+    key: `${ci}:${cj}`,
+  };
+}
+
 // ── UTILS ─────────────────────────────────────────────────────
 function hav(la1,lo1,la2,lo2){const R=6371,r=d=>d*Math.PI/180;const a=Math.sin(r(la2-la1)/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(r(lo2-lo1)/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
 const PIN_SIZE=44; // fixed px — same at every zoom level
@@ -194,66 +207,50 @@ const NM={markers:{},_busy:false,
   async update(center,zoom){if(this._busy)return;this._busy=true;try{await CACHE.load(center.lat,center.lng);this._apply(CACHE.markers,zoom);}finally{this._busy=false;}},
   _apply(data,zoom){
     const seen=new Set();
-    // Hide everything when zoomed past ~20km view
     if(zoom<=12){
       this.reset();
       const el=document.getElementById('map-info');
-      if(el)el.textContent='🔍 '+t('zoom_hint');
+      if(el)el.textContent=t('zoom_hint');
       return;
     }
-    // 50m half-deltas for rectangle
-    const refLat=(S.userLat||23.8);
-    const dlat=50/111000/2;
-    const dlon=50/(111000*Math.cos(refLat*Math.PI/180))/2;
-
     const filtered=data.filter(n=>{
       if(MAP_FILTER==='real')return(+n.real_score)>(+n.fake_score);
       if(MAP_FILTER==='fake')return(+n.fake_score)>(+n.real_score);
       return true;
     });
-
     filtered.forEach(n=>{
       seen.add(n.id);
-      const flat=+n.lat,flon=+n.lon;
+      // lat/lon is already the cell center (snapped on server)
+      const clat=+n.lat, clon=+n.lon;
       const diff=(+n.real_score)-(+n.fake_score);
       const cls=diff>2?'pr':diff<-2?'pf':'pn';
-      const rectColor=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
-      const nlat=flat+(flat-refLat>0?1:-1)*0; // use news lat for per-cell dlon
-      const cdlat=50/111000/2;
-      const cdlon=50/(111000*Math.cos(flat*Math.PI/180))/2;
-
+      const col=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
       if(!this.markers[n.id]){
-        // Draw 50×50m rectangle grid block
+        // Grid rectangle — exactly 50×50m, drawn from cell bounds
         const rect=L.rectangle(
-          [[flat-cdlat,flon-cdlon],[flat+cdlat,flon+cdlon]],
-          {color:rectColor,weight:1.5,opacity:0.7,fillColor:rectColor,fillOpacity:0.08,interactive:true}
+          [[clat-GRID_DLAT/2, clon-GRID_DLON/2],[clat+GRID_DLAT/2, clon+GRID_DLON/2]],
+          {color:col,weight:1.5,opacity:0.8,fillColor:col,fillOpacity:0.12,interactive:true}
         ).addTo(MAP);
-        rect.on('click',()=>{MAP.flyTo([flat,flon],Math.max(MAP.getZoom(),18),{duration:0.4});openMapCard(n.id);});
-
-        // Fixed 44px card centered exactly on coordinate
-        const layer=L.marker([flat,flon],{icon:mkPin(cls,n.thumb||''),interactive:true}).addTo(MAP);
-        layer.on('click',()=>{MAP.flyTo([flat,flon],Math.max(MAP.getZoom(),18),{duration:0.4});openMapCard(n.id);});
-
+        rect.on('click',()=>openMapCard(n.id));
+        // Fixed 44px news card centered exactly on cell center
+        const layer=L.marker([clat,clon],{icon:mkPin(cls,n.thumb||''),interactive:true}).addTo(MAP);
+        layer.on('click',()=>openMapCard(n.id));
         this.markers[n.id]={layer,rect,cls,thumb:n.thumb||''};
       } else {
-        // Update color if score changed
         const m=this.markers[n.id];
         if(cls!==m.cls||m.thumb!==n.thumb){
           m.layer.setIcon(mkPin(cls,n.thumb||''));
-          m.rect.setStyle({color:rectColor,fillColor:rectColor});
+          m.rect.setStyle({color:col,fillColor:col});
           m.cls=cls;m.thumb=n.thumb||'';
         }
       }
     });
-
-    // Remove markers no longer in filtered set
     Object.entries(this.markers).forEach(([id,m])=>{
       if(!seen.has(id)){
         if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
         delete this.markers[id];
       }
     });
-
     const el=document.getElementById('map-info');
     if(el)el.textContent=`📡 ${Object.keys(this.markers).length} / ${data.length}`;
   }
@@ -293,22 +290,21 @@ async function initReportMap(){
   rPinGroup=L.layerGroup().addTo(RMAP);
   const hint=document.getElementById('rmap-hint'),st=document.getElementById('rmap-st');
   RMAP.on('click',async e=>{
-    const plat=e.latlng.lat,plon=e.latlng.lng,dist=hav(lat,lon,plat,plon),inRange=dist<=5;
-    S.reportLat=plat;S.reportLon=plon;S.pinInRange=inRange;
+    const cell=snapToCell(e.latlng.lat,e.latlng.lng);
+    const slat=cell.lat,slon=cell.lon;
+    const dist=hav(lat,lon,slat,slon),inRange=dist<=5;
+    S.reportLat=slat;S.reportLon=slon;S.pinInRange=inRange;
     rPinGroup.clearLayers();
-    // Draw 50m exclusivity zone rectangle
-    const c50lat=50/111000/2, c50lon=50/(111000*Math.cos(plat*Math.PI/180))/2;
-    L.rectangle([[plat-c50lat,plon-c50lon],[plat+c50lat,plon+c50lon]],{color:inRange?'#00d496':'#ff4b6e',weight:2,dashArray:'5 4',fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:0.08}).addTo(rPinGroup);
-    // Center dot
-    L.circleMarker([plat,plon],{radius:5,color:'#fff',weight:2,fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:1}).addTo(rPinGroup);
+    // Show exact 50×50m grid cell
+    L.rectangle([[slat-GRID_DLAT/2,slon-GRID_DLON/2],[slat+GRID_DLAT/2,slon+GRID_DLON/2]],{color:inRange?'#00d496':'#ff4b6e',weight:2,dashArray:'5 4',fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:0.15}).addTo(rPinGroup);
+    L.circleMarker([slat,slon],{radius:4,color:'#fff',weight:2,fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:1}).addTo(rPinGroup);
     hint.style.display='none';st.style.display='block';
     if(!inRange){st.textContent=`${dist.toFixed(2)} ${t('km')} — ৫ কিমি সীমার বাইরে ✗`;st.className='rst-bad';return;}
     st.textContent='পরীক্ষা করছি…';st.className='';
     await CACHE.load(lat,lon);
-    // 50m exclusivity: reject if any cached news is within 50m
-    const occ=CACHE.markers.some(n=>hav(plat,plon,+n.lat,+n.lon)*1000<50);
-    if(occ){st.textContent=`এই স্থান থেকে ৫০মি এর মধ্যে ইতিমধ্যে সংবাদ আছে ⚠`;st.className='rst-cell';S.pinInRange=false;}
-    else{st.textContent=`${dist.toFixed(2)} ${t('km')} — ৫০মি জোন খালি ✓`;st.className='rst-ok';}
+    const occ=CACHE.markers.some(n=>{const c=snapToCell(+n.lat,+n.lon);return c.key===cell.key;});
+    if(occ){st.textContent='এই ঘর পূর্ণ — পাশের ঘর বেছে নিন ⚠';st.className='rst-cell';S.pinInRange=false;}
+    else{st.textContent=`${dist.toFixed(2)} ${t('km')} — ঘর খালি ✓`;st.className='rst-ok';}
   });
   setTimeout(()=>RMAP.invalidateSize(),120);
 }
@@ -339,7 +335,7 @@ async function submitReport(){
 }
 
 // ── DONATION ──────────────────────────────────────────────────
-function donationHTML(){return`<div class="donate-card glass"><div class="dc-head"><span style="font-size:22px">🤲</span><div><div style="font-weight:800;font-size:15px;color:var(--gold)">${t('help')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">BD News Map v15</div></div></div><p class="dc-msg">${t('help_msg')}</p><div class="dc-methods"><div class="dc-method" onclick="copyNum('bKash')"><div class="dc-logo" style="background:#E2136E">bK</div><div class="dc-info"><div class="dc-label">bKash</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Nagad')"><div class="dc-logo" style="background:#F7941D">Ng</div><div class="dc-info"><div class="dc-label">Nagad</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Rocket')"><div class="dc-logo" style="background:#8B1DB8">Rk</div><div class="dc-info"><div class="dc-label">Rocket</div><div class="dc-num">01710552580</div></div><div>📋</div></div></div><div class="dc-footer">সংবাদ হোক দালাল মুক্ত — BD News Map</div></div>`;}
+function donationHTML(){return`<div class="donate-card glass"><div class="dc-head"><span style="font-size:22px">🤲</span><div><div style="font-weight:800;font-size:15px;color:var(--gold)">${t('help')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">BD News Map v16</div></div></div><p class="dc-msg">${t('help_msg')}</p><div class="dc-methods"><div class="dc-method" onclick="copyNum('bKash')"><div class="dc-logo" style="background:#E2136E">bK</div><div class="dc-info"><div class="dc-label">bKash</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Nagad')"><div class="dc-logo" style="background:#F7941D">Ng</div><div class="dc-info"><div class="dc-label">Nagad</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Rocket')"><div class="dc-logo" style="background:#8B1DB8">Rk</div><div class="dc-info"><div class="dc-label">Rocket</div><div class="dc-num">01710552580</div></div><div>📋</div></div></div><div class="dc-footer">সংবাদ হোক দালাল মুক্ত — BD News Map</div></div>`;}
 function copyNum(svc){const n='01710552580';navigator.clipboard.writeText(n).then(()=>toast(svc+' '+t('copied')+': '+n)).catch(()=>toast(n));}
 
 // ── HOME ──────────────────────────────────────────────────────
@@ -492,7 +488,7 @@ function _renderNewsDetail(ct,n){
 }
 function closeModal(e){if(e.target===document.getElementById('modal-overlay')){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}}
 function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getElementById('bm-btn-'+id);if(btn)btn.innerHTML=s?`🔖 ${t('saved')}`:`🏷️ Save`;toast(s?t('saved'):t('unsaved'));}
-function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'BD News Map v15',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
+function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'BD News Map v16',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
 function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
 async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openMapCard(nid);else openModal(nid);}
 async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
