@@ -249,12 +249,12 @@ const NM={markers:{},_busy:false,
           });
           const lbl=L.marker([clat,clon],{icon,interactive:false,keyboard:false}).addTo(MAP);
           this.markers[n.id]={layer,border,lbl,col,thumb:''};
-          layer.on('click',()=>openMapCard(n.id));
-          border.on('click',()=>openMapCard(n.id));
+          layer.on('click',()=>openModal(n.id));
+          border.on('click',()=>openModal(n.id));
           return;
         }
-        layer.on('click',()=>openMapCard(n.id));
-        border.on('click',()=>openMapCard(n.id));
+        layer.on('click',()=>openModal(n.id));
+        border.on('click',()=>openModal(n.id));
         this.markers[n.id]={layer,border,lbl:null,col,thumb:n.thumb||''};
       } else {
         const m=this.markers[n.id];
@@ -520,7 +520,7 @@ function closeModal(e){if(e.target===document.getElementById('modal-overlay')){d
 function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getElementById('bm-btn-'+id);if(btn)btn.innerHTML=s?`🔖 ${t('saved')}`:`🏷️ Save`;toast(s?t('saved'):t('unsaved'));}
 function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'জনবার্তা',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
 function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
-async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openMapCard(nid);else openModal(nid);}
+async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openModal(nid);else openModal(nid);}
 async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP&&m.layer)MAP.removeLayer(m.layer);delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
 
 // ── AUTH ──────────────────────────────────────────────────────
