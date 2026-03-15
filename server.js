@@ -308,7 +308,10 @@ function adminOnly(req, res, next) {
 app.get('/api/admin/stats', authMiddleware, adminOnly, async (req, res) => {
   try {
     const stats = await store.getStats();
-    res.json({ ...stats, banned_count: 0, version: '1.0.0' });
+    const users = await store.getAllUsers(9999);
+    const banned_count = users.filter(u => u.banned).length;
+    const user_count = users.length;
+    res.json({ ...stats, user_count, banned_count, storage_used_gb: 0, storage_max_gb: 10, storage_pct: 0, version: '1.0.0' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -339,7 +342,12 @@ app.delete('/api/admin/news/:id', authMiddleware, adminOnly, async (req, res) =>
 app.get('/api/admin/users', authMiddleware, adminOnly, async (req, res) => {
   try {
     const users = await store.getAllUsers(200);
-    res.json(users.map(u => ({ id: u.id, username: u.username, phone: maskPhone(u.phone), banned: !!u.banned, created_at: u.created_at })));
+    // Add news_count per user (read from owner index)
+    const withCounts = await Promise.all(users.map(async u => {
+      const news = await store.getOwnerNews(u.id);
+      return { id: u.id, username: u.username, phone: maskPhone(u.phone), banned: !!u.banned, created_at: u.created_at, news_count: news.length };
+    }));
+    res.json(withCounts);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
