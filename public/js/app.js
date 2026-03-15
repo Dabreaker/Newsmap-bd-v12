@@ -1,697 +1,1035 @@
+/* ════════════════════════════════════════════
+   জনবার্তা — BD Hyperlocal News Map — app.js
+   ════════════════════════════════════════════ */
+
 'use strict';
-// BD News Map v16
 
-// ══════════════════════════════════════════════════════════════
-// I18N — English / Bengali
-// ══════════════════════════════════════════════════════════════
-const I18N={
-  bn:{
-    home:'হোম',map:'মানচিত্র',explore:'অন্বেষণ',notif:'বিজ্ঞপ্তি',
-    notif_short:'বিজ্ঞপ্তি',account:'আমার অ্যাকাউন্ট',report:'সংবাদ রিপোর্ট',
-    report_short:'রিপোর্ট',me:'আমি',login_sub:'লগইন বা নিবন্ধন করুন',
-    phone:'ফোন নম্বর',password:'পাসওয়ার্ড',enter:'লগইন করুন',
-    auth_hint:'যেকেউ নিবন্ধন করতে পারবেন',
-    register:'নিবন্ধন করুন',have_account:'ইতিমধ্যে অ্যাকাউন্ট আছে?',no_account:'নতুন ব্যবহারকারী?',
-    title:'শিরোনাম *',desc:'বিবরণ',publish:'প্রকাশ করুন',
-    pull_refresh:'টেনে ধরুন রিফ্রেশ করতে',tagline:'সত্য সংবাদ · সত্যিকার মানুষ',
-    explore_sub:'আশেপাশের সব সংবাদ',notif_sub:'আশেপাশের নতুন সংবাদ',
-    verified:'✓ যাচাইকৃত',suspicious:'⚠ সন্দেহজনক',checking:'◉ যাচাই চলছে',
-    nearby:'আপনার কাছাকাছি',recent:'সাম্প্রতিক সংবাদ',more:'আরো সংবাদ',
-    no_news:'আশেপাশে এখনো কোনো সংবাদ নেই।',report_first:'আপনিই প্রথম রিপোর্ট করুন!',
-    login_to_vote:'ভোট দিতে লগইন করুন',enable_loc:'লোকেশন চালু করুন',
-    saved:'সংরক্ষণ হয়েছে ✓',unsaved:'সংরক্ষণ সরানো হয়েছে',
-    truth:'% সত্যতা',votes:'ভোট',km:'কিমি',
-    ago_s:'সে',ago_m:'মি',ago_h:'ঘ',ago_d:'দিন',
-    bismillah:'পরম করুণাময়ের নামে শুরু',
-    help:'সহযোগিতা করুন',help_msg:'এই অ্যাপটি সত্যিকারে কার্যকরভাবে রিলিজ করতে আপনাদের সাহায্য প্রয়োজন।',
-    copy:'কপি',copied:'কপি হয়েছে',logout:'লগআউট',
-    bookmarks:'সংরক্ষিত সংবাদ',no_bookmarks:'এখনো কিছু সংরক্ষণ করেননি।',
-    history:'আমার সংবাদ',no_history:'আপনি এখনো কোনো সংবাদ পোস্ট করেননি।',
-    notif_empty:'কোনো বিজ্ঞপ্তি নেই।',mark_seen:'সব পড়া হয়েছে ✓',
-    zoom_hint:'জুম করুন — সংবাদ দেখতে (জুম ১৩+)',
-  },
-  en:{
-    home:'Home',map:'Map',explore:'Explore',notif:'Notifications',
-    notif_short:'Notifs',account:'My Account',report:'Report News',
-    report_short:'Report',me:'Me',login_sub:'Login or register',
-    phone:'Phone Number',password:'Password',enter:'Login',
-    auth_hint:'Anyone can register',
-    register:'Register',have_account:'Already have an account?',no_account:'New user?',
-    title:'Title *',desc:'Description',publish:'Publish',
-    pull_refresh:'Pull down to refresh',tagline:'True News · Real People',
-    explore_sub:'All news nearby',notif_sub:'New news nearby',
-    verified:'✓ Verified',suspicious:'⚠ Suspicious',checking:'◉ Checking',
-    nearby:'Near You',recent:'Recent News',more:'More News',
-    no_news:'No news in your area yet.',report_first:'Be the first to report!',
-    login_to_vote:'Login to vote',enable_loc:'Enable location',
-    saved:'Saved ✓',unsaved:'Removed from saved',
-    truth:'% truth',votes:'votes',km:'km',
-    ago_s:'s',ago_m:'m',ago_h:'h',ago_d:'d',
-    bismillah:'In the name of God, the Most Gracious',
-    help:'Support Us',help_msg:'We need your help to properly launch this app.',
-    copy:'Copy',copied:'Copied',logout:'Logout',
-    bookmarks:'Saved News',no_bookmarks:'Nothing saved yet.',
-    history:'My Reports',no_history:'You have not posted any news yet.',
-    notif_empty:'No notifications yet.',mark_seen:'Mark all read',
-    zoom_hint:'Zoom in to see news (zoom 13+)',
-  }
-};
-let LANG=localStorage.getItem('jb_lang')||'bn';
-function t(k){return(I18N[LANG]||I18N.bn)[k]||k;}
-function applyI18n(){
-  document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.dataset.i18n);});
-  document.getElementById('bismillah-text').textContent=t('bismillah');
-  document.querySelectorAll('[data-i18n-sub]').forEach(el=>{el.textContent=t(el.dataset.i18nSub);});
-  document.getElementById('lang-btn').textContent=LANG==='bn'?'EN':'বাং';
-  document.getElementById('explore-search').placeholder=LANG==='bn'?'সংবাদ খুঁজুন…':'Search news…';
-}
-function toggleLang(){
-  LANG=LANG==='bn'?'en':'bn';
-  localStorage.setItem('jb_lang',LANG);
-  applyI18n();
-  loadHome();loadExplore();
-}
-
-// ── THEME ─────────────────────────────────────────────────────
-let THEME=localStorage.getItem('jb_theme')||'dark';
-function applyTheme(){
-  document.documentElement.setAttribute('data-theme',THEME);
-  document.getElementById('theme-btn').textContent=THEME==='dark'?'🌙':'☀️';
-}
-function toggleTheme(){
-  THEME=THEME==='dark'?'light':'dark';
-  localStorage.setItem('jb_theme',THEME);
-  applyTheme();
-}
-
-// ── VERSES ────────────────────────────────────────────────────
-const VERSES=[
-  {bn:'নিশ্চয়ই কষ্টের সাথে স্বস্তি আছে।',en:'Verily with hardship comes ease.',ref:'94:5'},
-  {bn:'যে আল্লাহর উপর ভরসা করে, আল্লাহই তার জন্য যথেষ্ট।',en:'Whoever relies on Allah — He is sufficient.',ref:'65:3'},
-  {bn:'আল্লাহ কাউকে তার সাধ্যের বাইরে বোঝা চাপিয়ে দেন না।',en:'Allah does not burden a soul beyond its capacity.',ref:'2:286'},
-  {bn:'সত্য এসেছে এবং মিথ্যা বিলুপ্ত হয়েছে।',en:'Truth has come and falsehood has perished.',ref:'17:81'},
-  {bn:'আল্লাহর স্মরণেই অন্তর প্রশান্তি পায়।',en:'In the remembrance of Allah do hearts find rest.',ref:'13:28'},
-  {bn:'নিশ্চয়ই আল্লাহ ধৈর্যশীলদের সাথে আছেন।',en:'Allah is with the patient.',ref:'2:153'},
-  {bn:'তোমরা আমাকে ডাকো, আমি তোমাদের ডাকে সাড়া দেব।',en:'Call upon Me and I will respond to you.',ref:'40:60'},
-];
-function showVerse(id){
-  const el=document.getElementById(id);if(!el)return;
-  const v=VERSES[Math.floor(Math.random()*VERSES.length)];
-  el.innerHTML=`<div class="vtext">${LANG==='en'?v.en:v.bn}</div><div class="vref">${v.ref}</div>`;
-}
-
-// ══════════════════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════════════════
-const S={token:null,anon_id:null,admin:false,userLat:null,userLon:null,reportLat:null,reportLon:null,pinInRange:null,mapReady:false,activeTab:'home',_authCb:null};
-(()=>{try{const t=localStorage.getItem('jb_token'),a=localStorage.getItem('jb_aid'),ad=localStorage.getItem('jb_admin');if(t&&a){S.token=t;S.anon_id=parseInt(a)||null;S.admin=ad==='1';}}catch{}})();
-
-// ── BOOKMARKS ─────────────────────────────────────────────────
-const BM={_k:'jb_bm11',load(){try{return JSON.parse(localStorage.getItem(this._k)||'{}');}catch{return{};}},save(d){try{localStorage.setItem(this._k,JSON.stringify(d));}catch{}},has(id){return!!this.load()[id];},toggle(id,title){const d=this.load();if(d[id])delete d[id];else d[id]={id,title,ts:Date.now()};this.save(d);return!!d[id];},getAll(){return Object.values(this.load()).sort((a,b)=>b.ts-a.ts);}};
-
-// ── CACHE ─────────────────────────────────────────────────────
-const CACHE={markers:[],feed:[],total:0,lat:null,lon:null,ts:0,STALE_MS:5*60*1000,MOVE_KM:3,
-  fresh(lat,lon){if(!this.lat||Date.now()-this.ts>this.STALE_MS)return false;return hav(lat,lon,this.lat,this.lon)<=this.MOVE_KM;},
-  async load(lat,lon){if(this.fresh(lat,lon))return true;const d=await api('GET',`/api/region?lat=${lat}&lon=${lon}`);if(d.error||!d.markers)return false;this.markers=d.markers;this.feed=d.feed;this.total=d.total||d.markers.length;this.lat=lat;this.lon=lon;this.ts=Date.now();const b=document.getElementById('home-badge');if(b){b.textContent=`📍 ${this.total}`;b.style.display=this.total?'block':'none';}return true;},
-  invalidate(){this.ts=0;}};
-
-// ── MAP FILTER ────────────────────────────────────────────────
-let MAP_FILTER='all'; // all | real | fake
-function setMapFilter(f){
-  MAP_FILTER=f;
-  ['all','real','fake'].forEach(x=>document.getElementById('mf-'+x)?.classList.toggle('on',x===f));
-  if(MAP)NM._apply(CACHE.markers,MAP.getZoom(),MAP.getCenter().lat);
-}
-
-// ── GEOHASH ───────────────────────────────────────────────────
-(()=>{const B='0123456789bcdefghjkmnpqrstuvwxyz';function enc(lat,lon,p){let i=0,b=0,e=true,h='';let la=-90,La=90,lo=-180,Lo=180;while(h.length<p){if(e){const m=(lo+Lo)/2;if(lon>m){i=(i<<1)|1;lo=m;}else{i<<=1;Lo=m;}}else{const m=(la+La)/2;if(lat>m){i=(i<<1)|1;la=m;}else{i<<=1;La=m;}}e=!e;if(++b===5){h+=B[i];b=0;i=0;}}return h;}window._gh={enc};})();
-
-// ── GRID — 50×50m, matches server exactly ────────────────────
+// ── GRID CONSTANTS ──────────────────────────
 const GRID_DLAT = 50 / 111000;
 const GRID_DLON = 50 / (111000 * Math.cos(23.5 * Math.PI / 180));
+
 function snapToCell(lat, lon) {
   const ci = Math.floor(lat / GRID_DLAT);
   const cj = Math.floor(lon / GRID_DLON);
   return {
     lat: (ci + 0.5) * GRID_DLAT,
     lon: (cj + 0.5) * GRID_DLON,
-    key: `${ci}:${cj}`,
+    key: `${ci}:${cj}`
   };
 }
 
-// ── UTILS ─────────────────────────────────────────────────────
-function hav(la1,lo1,la2,lo2){const R=6371,r=d=>d*Math.PI/180;const a=Math.sin(r(la2-la1)/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(r(lo2-lo1)/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
-const PIN_SIZE=44; // fixed px — same at every zoom level
-function mkPin(cls,thumb){
-  const half=22; // PIN_SIZE/2 — integer, center locked to coordinate
-  const bg=thumb?`background-image:url('${thumb}');background-size:cover;background-position:center;`:'';
-  return L.divIcon({
-    html:`<div class="nm-pin ${cls}" style="width:${PIN_SIZE}px;height:${PIN_SIZE}px;${bg}">${!thumb?'<div class="nm-noimg">📰</div>':''}</div>`,
-    iconSize:[PIN_SIZE,PIN_SIZE],
-    iconAnchor:[half,half],
-    className:'',
-  });
-}
-function rt(u){const d=Math.floor(Date.now()/1000)-u;if(d<60)return d+t('ago_s');if(d<3600)return Math.floor(d/60)+t('ago_m');if(d<86400)return Math.floor(d/3600)+t('ago_h');return Math.floor(d/86400)+t('ago_d');}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function pct(n){const tot=+n.real_score+(+n.fake_score);return tot>0?Math.round((+n.real_score/tot)*100):50;}
-function fmtExpiry(expires_at){if(!expires_at)return'';const rem=expires_at-Math.floor(Date.now()/1000);if(rem<=0)return'মেয়াদ শেষ';const h=Math.floor(rem/3600),m=Math.floor((rem%3600)/60);return h>0?`${h}ঘ ${m}মি বাকি`:`${m}মি বাকি`;}
-
-// ── API ───────────────────────────────────────────────────────
-async function api(method,url,body,isForm){
-  const o={method,headers:{}};
-  if(S.token)o.headers['Authorization']='Bearer '+S.token;
-  if(body){if(isForm)o.body=body;else{o.headers['Content-Type']='application/json';o.body=JSON.stringify(body);}}
-  try{
-    const r=await fetch(url,o);const ct=r.headers.get('content-type')||'';
-    if(!ct.includes('application/json'))return{error:'Server error ('+r.status+')'};
-    const d=await r.json();d._status=r.status;
-    if(r.status===401&&S.token){S.token=null;S.anon_id=null;S.admin=false;try{localStorage.removeItem('jb_token');localStorage.removeItem('jb_aid');localStorage.removeItem('jb_admin');}catch{}renderUser();toast(t('enter')+' — '+t('login_sub'),true);openAuth();}
-    return d;
-  }catch{return{error:'নেটওয়ার্ক ত্রুটি'};}
+// ── HAVERSINE ────────────────────────────────
+function hav(lat1, lon1, lat2, lon2) {
+  const R = 6371, r = d => d * Math.PI / 180;
+  const a = Math.sin(r(lat2 - lat1) / 2) ** 2
+          + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lon2 - lon1) / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── TOAST ─────────────────────────────────────────────────────
-let _tt;
-function toast(msg,err){const el=document.getElementById('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3500);}
-
-// ── GPS ───────────────────────────────────────────────────────
-function gps(){return new Promise(res=>{if(S.userLat!==null)return res({lat:S.userLat,lon:S.userLon});if(!navigator.geolocation){S.userLat=23.8103;S.userLon=90.4125;return res({lat:23.8103,lon:90.4125});}navigator.geolocation.getCurrentPosition(p=>{S.userLat=p.coords.latitude;S.userLon=p.coords.longitude;res({lat:S.userLat,lon:S.userLon});},()=>{if(!S.userLat){S.userLat=23.8103;S.userLon=90.4125;}res({lat:S.userLat,lon:S.userLon});},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});});}
-
-// ── TABS ──────────────────────────────────────────────────────
-function switchTab(name){
-  if(name==='report'&&!S.token){S._authCb=()=>switchTab('report');openAuth();return;}
-  if(name==='admin'&&!S.admin){toast('Admin only',true);return;}
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tbb,.dn-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
-  const el=document.getElementById('screen-'+name);if(el)el.classList.add('active');
-  S.activeTab=name;
-  if(name!=='map')closeMapCard();
-  if(name==='home'){showVerse('vh');loadHome();}
-  if(name==='map')  initMap();
-  if(name==='explore'){loadExplore();}
-  if(name==='notify') loadNotifications();
-  if(name==='user')   renderUser();
-  if(name==='report') initReportMap();
-  if(name==='admin')  loadAdmin();
+function voteWeight(distKm) {
+  return Math.max(0.2, 1.0 - (distKm / 5.0) * 0.8);
 }
 
-// ── MARKER MANAGER — 50×50m grid blocks ──────────────────────
-const NM={markers:{},_busy:false,
-  reset(){
-    Object.values(this.markers).forEach(m=>{
-      if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
-    });
-    this.markers={};
+// ── GLOBAL STATE ─────────────────────────────
+const S = {
+  token: localStorage.getItem('jb_token'),
+  anon_id: parseInt(localStorage.getItem('jb_aid')) || null,
+  admin: localStorage.getItem('jb_admin') === '1',
+  userLat: null, userLon: null,
+  reportLat: null, reportLon: null,
+  pinInRange: null,
+  mapReady: false,
+  activeTab: 'home',
+  _authCb: null
+};
+
+// ── CACHE ────────────────────────────────────
+const CACHE = {
+  markers: [], feed: [], total: 0,
+  lat: null, lon: null, ts: 0,
+  STALE_MS: 5 * 60 * 1000,
+  MOVE_KM: 3,
+  fresh(lat, lon) {
+    if (!this.ts) return false;
+    if (Date.now() - this.ts > this.STALE_MS) return false;
+    if (this.lat !== null && hav(lat, lon, this.lat, this.lon) > this.MOVE_KM) return false;
+    return true;
   },
-  async update(center,zoom){if(this._busy)return;this._busy=true;try{await CACHE.load(center.lat,center.lng);this._apply(CACHE.markers,zoom);}finally{this._busy=false;}},
-  _apply(data,zoom){
-    const seen=new Set();
-    if(zoom<=12){
-      this.reset();
-      const el=document.getElementById('map-info');
-      if(el)el.textContent=t('zoom_hint');
-      return;
+  async load(lat, lon) {
+    if (this.fresh(lat, lon)) return;
+    const data = await api(`/api/region?lat=${lat}&lon=${lon}`);
+    this.markers = data.markers || [];
+    this.feed = data.feed || [];
+    this.total = data.total || 0;
+    this.lat = lat; this.lon = lon;
+    this.ts = Date.now();
+  },
+  invalidate() { this.ts = 0; }
+};
+
+// ── BOOKMARKS ────────────────────────────────
+const BM = {
+  _key: 'jb_bm11',
+  _data() { try { return JSON.parse(localStorage.getItem(this._key) || '{}'); } catch { return {}; } },
+  _save(d) { localStorage.setItem(this._key, JSON.stringify(d)); },
+  toggle(id, title) {
+    const d = this._data();
+    if (d[id]) { delete d[id]; this._save(d); return false; }
+    d[id] = { id, title, ts: Date.now() }; this._save(d); return true;
+  },
+  has(id) { return !!this._data()[id]; },
+  getAll() { return Object.values(this._data()).sort((a, b) => b.ts - a.ts); }
+};
+
+// ── I18N ─────────────────────────────────────
+let LANG = localStorage.getItem('jb_lang') || 'bn';
+const I18N = {
+  bn: {
+    home: 'হোম', map: 'মানচিত্র', explore: 'অন্বেষণ', notifs: 'বিজ্ঞপ্তি', account: 'অ্যাকাউন্ট',
+    login: 'লগইন', register: 'নিবন্ধন', logout: 'লগআউট',
+    phone: 'ফোন নম্বর', password: 'পাসওয়ার্ড',
+    title: 'শিরোনাম', description: 'বিবরণ',
+    reportNews: 'সংবাদ রিপোর্ট করুন', myReports: 'আমার রিপোর্ট',
+    markRead: 'সব পড়া চিহ্নিত করুন',
+    real: 'সত্য', fake: 'মিথ্যা',
+    verified: 'যাচাইকৃত', suspicious: 'সন্দেহজনক', checking: 'যাচাই চলছে',
+    noNews: 'এই এলাকায় কোনো সংবাদ নেই',
+    loading: 'লোড হচ্ছে…',
+    loginToVote: 'ভোট দিতে লগইন করুন',
+    tooFar: 'সংবাদ থেকে ৫ কিমি-র বেশি দূরে',
+    votedReal: '✅ সত্য হিসেবে ভোট দেওয়া হয়েছে',
+    votedFake: '❌ মিথ্যা হিসেবে ভোট দেওয়া হয়েছে',
+    pinTooFar: '⚠️ পিন আপনার অবস্থান থেকে ৫ কিমি-র বেশি দূরে',
+    pinOk: '✅ পিন বৈধ অবস্থানে',
+    cellTaken: '⚠️ এই সেলে ইতিমধ্যে একটি সংবাদ আছে',
+    saved: '🔖 সংরক্ষিত', unsaved: '🗑️ সরানো হয়েছে',
+    copied: '✅ কপি করা হয়েছে',
+    deleted: '🗑️ মুছে ফেলা হয়েছে',
+    posted: '✅ রিপোর্ট পোস্ট করা হয়েছে',
+    timeAgo: (s) => {
+      if (s < 60) return `${s}সে আগে`;
+      if (s < 3600) return `${Math.floor(s/60)}মি আগে`;
+      if (s < 86400) return `${Math.floor(s/3600)}ঘ আগে`;
+      return `${Math.floor(s/86400)}দিন আগে`;
+    },
+    expiresIn: (s) => {
+      if (s <= 0) return 'মেয়াদ শেষ';
+      const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+      return `${h}ঘ ${m}মি বাকি`;
     }
-    const filtered=data.filter(n=>{
-      if(MAP_FILTER==='real')return(+n.real_score)>(+n.fake_score);
-      if(MAP_FILTER==='fake')return(+n.fake_score)>(+n.real_score);
-      return true;
-    });
-    filtered.forEach(n=>{
-      seen.add(n.id);
-      // lat/lon is already the cell center (snapped on server)
-      const clat=+n.lat, clon=+n.lon;
-      const diff=(+n.real_score)-(+n.fake_score);
-      const cls=diff>2?'pr':diff<-2?'pf':'pn';
-      const col=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
-      if(!this.markers[n.id]){
-        // Grid rectangle — exactly 50×50m, drawn from cell bounds
-        const rect=L.rectangle(
-          [[clat-GRID_DLAT/2, clon-GRID_DLON/2],[clat+GRID_DLAT/2, clon+GRID_DLON/2]],
-          {color:col,weight:1.5,opacity:0.8,fillColor:col,fillOpacity:0.12,interactive:true}
-        ).addTo(MAP);
-        rect.on('click',()=>openMapCard(n.id));
-        // Fixed 44px news card centered exactly on cell center
-        const layer=L.marker([clat,clon],{icon:mkPin(cls,n.thumb||''),interactive:true}).addTo(MAP);
-        layer.on('click',()=>openMapCard(n.id));
-        this.markers[n.id]={layer,rect,cls,thumb:n.thumb||''};
-      } else {
-        const m=this.markers[n.id];
-        if(cls!==m.cls||m.thumb!==n.thumb){
-          m.layer.setIcon(mkPin(cls,n.thumb||''));
-          m.rect.setStyle({color:col,fillColor:col});
-          m.cls=cls;m.thumb=n.thumb||'';
-        }
-      }
-    });
-    Object.entries(this.markers).forEach(([id,m])=>{
-      if(!seen.has(id)){
-        if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
-        delete this.markers[id];
-      }
-    });
-    const el=document.getElementById('map-info');
-    if(el)el.textContent=`📡 ${Object.keys(this.markers).length} / ${data.length}`;
+  },
+  en: {
+    home: 'Home', map: 'Map', explore: 'Explore', notifs: 'Alerts', account: 'Account',
+    login: 'Login', register: 'Register', logout: 'Logout',
+    phone: 'Phone Number', password: 'Password',
+    title: 'Title', description: 'Description',
+    reportNews: 'Report News', myReports: 'My Reports',
+    markRead: 'Mark All Read',
+    real: 'Real', fake: 'Fake',
+    verified: 'Verified', suspicious: 'Suspicious', checking: 'Checking',
+    noNews: 'No news in this area',
+    loading: 'Loading…',
+    loginToVote: 'Login to vote',
+    tooFar: 'More than 5km from news',
+    votedReal: '✅ Voted as Real',
+    votedFake: '❌ Voted as Fake',
+    pinTooFar: '⚠️ Pin is more than 5km away',
+    pinOk: '✅ Valid location',
+    cellTaken: '⚠️ A news item already exists in this cell',
+    saved: '🔖 Saved', unsaved: '🗑️ Removed',
+    copied: '✅ Copied',
+    deleted: '🗑️ Deleted',
+    posted: '✅ Report posted',
+    timeAgo: (s) => {
+      if (s < 60) return `${s}s ago`;
+      if (s < 3600) return `${Math.floor(s/60)}m ago`;
+      if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+      return `${Math.floor(s/86400)}d ago`;
+    },
+    expiresIn: (s) => {
+      if (s <= 0) return 'Expired';
+      const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+      return `${h}h ${m}m left`;
+    }
   }
 };
 
-// ── MAIN MAP ──────────────────────────────────────────────────
-let MAP=null,uCircle=null,uDot=null,_mpd=null;
-async function initMap(){
-  if(S.mapReady){setTimeout(()=>{if(MAP){MAP.invalidateSize();trigLoad();}},80);return;}
-  S.mapReady=true;
-  const{lat,lon}=await gps();
-  MAP=L.map('map',{zoomControl:false,preferCanvas:true,tap:true}).setView([lat,lon],16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OSM',maxZoom:21,keepBuffer:2,updateWhenIdle:false,updateWhenZooming:false}).addTo(MAP);
-  L.control.zoom({position:'bottomright'}).addTo(MAP);
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{MAP.invalidateSize();drawUser(lat,lon);trigLoad();}));
-  MAP.on('moveend',()=>{clearTimeout(_mpd);_mpd=setTimeout(trigLoad,400);});
-  MAP.on('zoomend',()=>{clearTimeout(_mpd);_mpd=setTimeout(()=>{if(MAP)NM._apply(CACHE.markers,MAP.getZoom(),MAP.getCenter().lat);},200);});
-}
-function trigLoad(){if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());}
-function forceMapRefresh(){CACHE.invalidate();if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());toast('🔄 Refreshed');}
-function drawUser(lat,lon){
-  if(uCircle){uCircle.remove();uDot&&uDot.remove();}
-  uCircle=L.circle([lat,lon],{radius:5000,color:'#00d496',weight:1.5,opacity:.4,dashArray:'6 5',fillColor:'#00d496',fillOpacity:.03,interactive:false}).addTo(MAP);
-  uDot=L.circleMarker([lat,lon],{radius:8,color:'#fff',weight:2.5,fillColor:'#4c7bff',fillOpacity:1,interactive:false}).addTo(MAP);
-}
-function locateMe(){if(!MAP)return;S.userLat=null;gps().then(({lat,lon})=>{MAP.flyTo([lat,lon],17,{duration:0.8});drawUser(lat,lon);toast('📍 Updated');});}
+function t(key) { return I18N[LANG][key] || key; }
 
-// ── REPORT MAP ────────────────────────────────────────────────
-let RMAP=null,rPinGroup=null,rMapReady=false;
-async function initReportMap(){
-  if(rMapReady)return;rMapReady=true;
-  const{lat,lon}=await gps();
-  RMAP=L.map('report-map',{zoomControl:true,tap:true}).setView([lat,lon],17);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:21,attribution:'&copy; OSM'}).addTo(RMAP);
-  L.circle([lat,lon],{radius:5000,color:'#00d496',weight:1.5,opacity:.6,dashArray:'7 5',fillColor:'#00d496',fillOpacity:.04,interactive:false}).addTo(RMAP);
-  L.circleMarker([lat,lon],{radius:9,color:'#fff',weight:2.5,fillColor:'#4c7bff',fillOpacity:1,interactive:false}).addTo(RMAP);
-  rPinGroup=L.layerGroup().addTo(RMAP);
-  const hint=document.getElementById('rmap-hint'),st=document.getElementById('rmap-st');
-  RMAP.on('click',async e=>{
-    const cell=snapToCell(e.latlng.lat,e.latlng.lng);
-    const slat=cell.lat,slon=cell.lon;
-    const dist=hav(lat,lon,slat,slon),inRange=dist<=5;
-    S.reportLat=slat;S.reportLon=slon;S.pinInRange=inRange;
-    rPinGroup.clearLayers();
-    // Show exact 50×50m grid cell
-    L.rectangle([[slat-GRID_DLAT/2,slon-GRID_DLON/2],[slat+GRID_DLAT/2,slon+GRID_DLON/2]],{color:inRange?'#00d496':'#ff4b6e',weight:2,dashArray:'5 4',fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:0.15}).addTo(rPinGroup);
-    L.circleMarker([slat,slon],{radius:4,color:'#fff',weight:2,fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:1}).addTo(rPinGroup);
-    hint.style.display='none';st.style.display='block';
-    if(!inRange){st.textContent=`${dist.toFixed(2)} ${t('km')} — ৫ কিমি সীমার বাইরে ✗`;st.className='rst-bad';return;}
-    st.textContent='পরীক্ষা করছি…';st.className='';
-    await CACHE.load(lat,lon);
-    const occ=CACHE.markers.some(n=>{const c=snapToCell(+n.lat,+n.lon);return c.key===cell.key;});
-    if(occ){st.textContent='এই ঘর পূর্ণ — পাশের ঘর বেছে নিন ⚠';st.className='rst-cell';S.pinInRange=false;}
-    else{st.textContent=`${dist.toFixed(2)} ${t('km')} — ঘর খালি ✓`;st.className='rst-ok';}
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const v = t(el.dataset.i18n);
+    if (typeof v === 'string') el.textContent = v;
   });
-  setTimeout(()=>RMAP.invalidateSize(),120);
-}
-function prevImgs(input){const p=document.getElementById('img-prev');p.innerHTML='';[...input.files].slice(0,10).forEach(f=>{const i=document.createElement('img');i.src=URL.createObjectURL(f);p.appendChild(i);});}
-
-async function submitReport(){
-  if(!S.token){openAuth();return;}
-  const title=document.getElementById('r-title').value.trim(),desc=document.getElementById('r-desc').value.trim(),links=document.getElementById('r-links').value.trim(),imgs=document.getElementById('r-images').files;
-  if(!title){toast(t('title')+' আবশ্যক',true);return;}
-  if(!S.reportLat){toast('মানচিত্রে পিন করুন',true);return;}
-  if(S.pinInRange===false){toast('পিন সীমার বাইরে বা ঘর পূর্ণ',true);return;}
-  const btn=document.getElementById('submit-btn');if(btn.disabled)return;
-  btn.disabled=true;btn.textContent='প্রকাশ হচ্ছে…';
-  const fd=new FormData();fd.append('title',title);fd.append('description',desc);fd.append('lat',S.reportLat);fd.append('lon',S.reportLon);fd.append('links',links);fd.append('user_lat',S.userLat??S.reportLat);fd.append('user_lon',S.userLon??S.reportLon);[...imgs].forEach(f=>fd.append('images',f));
-  const r=await api('POST','/api/news',fd,true);
-  btn.disabled=false;btn.textContent=t('publish');
-  if(r.error){toast('ত্রুটি: '+r.error,true);return;}
-  toast('সংবাদ প্রকাশিত হয়েছে ✓');CACHE.invalidate();
-  ['r-title','r-desc','r-links'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('r-images').value='';document.getElementById('img-prev').innerHTML='';
-  const st=document.getElementById('rmap-st');if(st){st.style.display='none';st.className='';}
-  document.getElementById('rmap-hint').style.display='block';
-  S.reportLat=null;S.reportLon=null;S.pinInRange=null;
-  if(rPinGroup)rPinGroup.clearLayers();
-  rMapReady=false;if(RMAP){RMAP.remove();RMAP=null;}rPinGroup=null;
-  NM.reset();S.mapReady=false;
-  switchTab('home');
 }
 
-// ── DONATION ──────────────────────────────────────────────────
-function donationHTML(){return`<div class="donate-card glass"><div class="dc-head"><span style="font-size:22px">🤲</span><div><div style="font-weight:800;font-size:15px;color:var(--gold)">${t('help')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">BD News Map v16</div></div></div><p class="dc-msg">${t('help_msg')}</p><div class="dc-methods"><div class="dc-method" onclick="copyNum('bKash')"><div class="dc-logo" style="background:#E2136E">bK</div><div class="dc-info"><div class="dc-label">bKash</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Nagad')"><div class="dc-logo" style="background:#F7941D">Ng</div><div class="dc-info"><div class="dc-label">Nagad</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Rocket')"><div class="dc-logo" style="background:#8B1DB8">Rk</div><div class="dc-info"><div class="dc-label">Rocket</div><div class="dc-num">01710552580</div></div><div>📋</div></div></div><div class="dc-footer">সংবাদ হোক দালাল মুক্ত — BD News Map</div></div>`;}
-function copyNum(svc){const n='01710552580';navigator.clipboard.writeText(n).then(()=>toast(svc+' '+t('copied')+': '+n)).catch(()=>toast(n));}
-
-// ── HOME ──────────────────────────────────────────────────────
-async function loadHome(force=false){
-  if(force)CACHE.invalidate();
-  const el=document.getElementById('home-content');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const{lat,lon}=await gps();await CACHE.load(lat,lon);
-  const feed=CACHE.feed;
-  if(!feed.length){el.innerHTML=`<div class="empty"><div class="ei">🗺️</div><p>${t('no_news')}<br>${t('report_first')}</p></div>${donationHTML()}`;return;}
-  const bc=n=>+n.real_score>+n.fake_score?'breal':+n.fake_score>+n.real_score?'bfake':'bneu';
-  const bt=n=>+n.real_score>+n.fake_score?t('verified'):+n.fake_score>+n.real_score?t('suspicious'):t('checking');
-  const hero=feed[0],rest=feed.slice(1,5),later=feed.slice(5);
-  el.innerHTML=`
-    <div class="slabel">${t('nearby')}</div>
-    <div class="hcard glass" onclick="openModal('${hero.id}')">
-      ${hero.thumb?`<img class="h-img" src="${esc(hero.thumb)}" loading="lazy" onerror="this.style.display='none'">`:`<div class="h-noimg">📰</div>`}
-      <div class="h-body"><span class="hbadge ${bc(hero)}">${bt(hero)}</span>
-      <div class="htitle">${esc(hero.title)}</div>
-      <div class="hmeta"><span>${rt(hero.created_at)}</span><span>${hav(lat,lon,+hero.lat,+hero.lon).toFixed(1)} ${t('km')}</span><span>${hero.vote_count||0} ${t('votes')}</span></div>
-      <div class="tbw"><div class="tb" style="width:${pct(hero)}%"></div></div></div>
-    </div>
-    ${rest.length?`<div class="slabel" style="margin-top:16px">${t('recent')}</div>
-    <div class="crow">${rest.map(n=>`<div class="mcard glass" onclick="openModal('${n.id}')">
-      ${n.thumb?`<img class="m-img" src="${esc(n.thumb)}" loading="lazy" onerror="this.style.display='none'">`:`<div class="m-noimg">📰</div>`}
-      <div class="m-body"><div class="m-title">${esc(n.title)}</div>
-      <div class="m-meta"><span class="sp ${+n.real_score>+n.fake_score?'sp-r':'sp-f'}">${pct(n)}${t('truth')}</span><span>${hav(lat,lon,+n.lat,+n.lon).toFixed(1)}${t('km')}</span></div></div>
-    </div>`).join('')}</div>`:``}
-    ${later.length?`<div class="slabel" style="margin-top:16px">${t('more')}</div>
-    ${later.map(n=>`<div class="lcard glass" onclick="openModal('${n.id}')">
-      ${n.thumb?`<img class="l-img" src="${esc(n.thumb)}" loading="lazy" onerror="this.style.display='none'">`:`<div class="l-noimg">📰</div>`}
-      <div class="l-body"><div class="l-title">${esc(n.title)}</div><div class="l-meta">${rt(n.created_at)} · ${hav(lat,lon,+n.lat,+n.lon).toFixed(1)} ${t('km')}</div></div>
-      <div class="l-sc ${+n.real_score>+n.fake_score?'sc-r':'sc-f'}">${pct(n)}%</div>
-    </div>`).join('')}`:``}
-    ${donationHTML()}`;
+// ── UTILITIES ────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// PTR
-function initPTR(){const sc=document.getElementById('screen-home');if(!sc||sc._ptr)return;sc._ptr=true;let sy=0,pulling=false;sc.addEventListener('touchstart',e=>{if(sc.scrollTop===0){sy=e.touches[0].clientY;pulling=true;}},{passive:true});sc.addEventListener('touchmove',e=>{if(!pulling)return;const dy=e.touches[0].clientY-sy;const bar=document.getElementById('ptr-bar');if(dy>30)bar.style.display='block';},{passive:true});sc.addEventListener('touchend',e=>{const dy=e.changedTouches[0].clientY-sy;document.getElementById('ptr-bar').style.display='none';pulling=false;if(dy>80)loadHome(true);},{passive:true});}
+function nowSec() { return Math.floor(Date.now() / 1000); }
 
-// ── EXPLORE ───────────────────────────────────────────────────
-let _exploreAll=[];
-async function loadExplore(){
-  const el=document.getElementById('explore-content');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const{lat,lon}=await gps();await CACHE.load(lat,lon);
-  _exploreAll=CACHE.feed;renderExploreList(_exploreAll,lat,lon);
-}
-function renderExploreList(list,lat,lon){
-  const el=document.getElementById('explore-content');
-  if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🔍</div><p>কিছু পাওয়া যায়নি।</p></div>`;return;}
-  el.innerHTML=list.map(n=>`<div class="lcard glass" onclick="openModal('${n.id}')">
-    ${n.thumb?`<img class="l-img" src="${esc(n.thumb)}" loading="lazy" onerror="this.style.display='none'">`:`<div class="l-noimg">📰</div>`}
-    <div class="l-body"><div class="l-title">${esc(n.title)}</div><div class="l-meta">${rt(n.created_at)} · ${hav(lat||23.8,lon||90.4,+n.lat,+n.lon).toFixed(1)} ${t('km')}</div></div>
-    <div class="l-sc ${+n.real_score>+n.fake_score?'sc-r':'sc-f'}">${pct(n)}%</div>
-  </div>`).join('');
-}
-function filterExplore(q){const lat=S.userLat,lon=S.userLon;if(!q.trim()){renderExploreList(_exploreAll,lat,lon);return;}const lq=q.toLowerCase();renderExploreList(_exploreAll.filter(n=>n.title.toLowerCase().includes(lq)||(n.description||'').toLowerCase().includes(lq)),lat,lon);}
-
-// ── NOTIFICATIONS ─────────────────────────────────────────────
-async function loadNotifications(){
-  if(!S.token){document.getElementById('notify-content').innerHTML=`<div class="empty"><p>${t('login_sub')}</p><button class="btn-p" style="margin-top:10px;max-width:200px" onclick="openAuth()">Login</button></div>`;return;}
-  const el=document.getElementById('notify-content');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const d=await api('GET','/api/notifications');
-  if(d.error){el.innerHTML=`<div class="empty"><p>${esc(d.error)}</p></div>`;return;}
-  updateNotifBadge(d.unseen||0);
-  if(!d.notifications.length){el.innerHTML=`<div class="empty"><div class="ei">🔔</div><p>${t('notif_empty')}</p></div>`;return;}
-  el.innerHTML=d.notifications.map(n=>`<div class="notif-item glass" onclick="openModal('${n.news_id}')">
-    <div class="notif-dot ${n.seen?'seen':''}"></div>
-    <div><div class="notif-title">${esc(n.title)}</div><div class="notif-meta">${rt(n.created_at)}</div></div>
-  </div>`).join('');
-}
-async function markAllSeen(){
-  if(!S.token)return;await api('POST','/api/notifications/seen');
-  updateNotifBadge(0);loadNotifications();toast(t('mark_seen'));
-}
-function updateNotifBadge(n){
-  const badge=document.getElementById('notif-badge'),tb=document.getElementById('tb-notif-dot'),dn=document.getElementById('dn-notif-dot');
-  if(badge){badge.textContent=n>0?n:'';badge.style.display=n>0?'flex':'none';}
-  if(tb){tb.style.display=n>0?'block':'none';}
-  if(dn){dn.style.display=n>0?'block':'none';}
-}
-async function pollNotifications(){if(!S.token)return;const d=await api('GET','/api/notifications');if(!d.error)updateNotifBadge(d.unseen||0);}
-
-// ── MAP CARD OVERLAY (shown over the map, not a separate screen) ──
-async function openMapCard(newsId){
-  const panel=document.getElementById('map-card-panel');
-  const ct=document.getElementById('map-card-content');
-  if(!panel||!ct)return openModal(newsId); // fallback
-  ct.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  panel.classList.add('open');
-  const n=await api('GET','/api/news/'+newsId);
-  if(n.error){ct.innerHTML=`<div class="empty"><p>${esc(n.error)}</p></div>`;return;}
-  _renderNewsDetail(ct,n);
-}
-function closeMapCard(){
-  const panel=document.getElementById('map-card-panel');
-  if(panel)panel.classList.remove('open');
+function pct(item) {
+  const tot = (item.real_score || 0) + (item.fake_score || 0);
+  return tot > 0 ? Math.round((item.real_score / tot) * 100) : 50;
 }
 
-// ── MODAL (used from home/explore/notif tabs) ─────────────────
-async function openModal(newsId){
-  const ol=document.getElementById('modal-overlay'),ct=document.getElementById('modal-content');
-  ct.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';ol.classList.add('open');document.body.style.overflow='hidden';
-  const n=await api('GET','/api/news/'+newsId);
-  if(n.error){ct.innerHTML=`<div class="empty"><p>${esc(n.error)}</p></div>`;return;}
-  _renderNewsDetail(ct,n);
+function statusLabel(p) {
+  if (p >= 65) return { label: t('verified'), cls: 'real' };
+  if (p <= 35) return { label: t('suspicious'), cls: 'fake' };
+  return { label: t('checking'), cls: 'warn' };
 }
 
-function _renderNewsDetail(ct,n){
-  const newsId=n.id;
-  const dist=S.userLat!=null?hav(S.userLat,S.userLon,+n.lat,+n.lon):null;
-  const canVote=S.token&&dist!=null&&dist<=5;
-  const real=+(n.real_score||0),fake=+(n.fake_score||0),tot=real+fake,p=tot>0?Math.round((real/tot)*100):50;
-  const imgs=Array.isArray(n.images)?n.images:[];
-  const isOwner=S.anon_id&&n.owner_id&&Number(n.owner_id)===Number(S.anon_id);
-  const ageS=Math.floor(Date.now()/1000)-(+n.created_at||0),canDel=(isOwner&&ageS<10800)||S.admin;
-  const rawLinks=(n.links||'').trim();
-  const linksHTML=rawLinks?rawLinks.split(/[\s,]+/).filter(Boolean).map(l=>`<a href="${esc(l)}" target="_blank" rel="noopener">${esc(l.replace(/^https?:\/\//,'').slice(0,45))}</a>`).join(''):'';
-  const isBm=BM.has(newsId);const coords=`${(+n.lat).toFixed(5)}, ${(+n.lon).toFixed(5)}`;
-  const expiry=fmtExpiry(n.expires_at);
-  ct.innerHTML=`
-    ${imgs.length?`<div class="mcar">${imgs.map((s,i)=>`<div class="mslide"><img src="${esc(s)}" loading="lazy" style="width:100%;height:210px;object-fit:cover;border-radius:11px;display:block" onerror="this.closest('.mslide').style.display='none'">${imgs.length>1?`<div class="mcar-n">${i+1}/${imgs.length}</div>`:''}</div>`).join('')}</div>`:`<div class="noimgph">📷 ছবি নেই</div>`}
-    <div class="modal-actions">
-      <button class="mac-btn" id="bm-btn-${newsId}" onclick="toggleBM('${newsId}','${esc(n.title)}')" style="color:var(--gold)">${isBm?'🔖 '+t('saved'):'🏷️ Save'}</button>
-      <button class="mac-btn" onclick="shareNews('${newsId}','${esc(n.title)}')" style="color:var(--accent)">📤 Share</button>
-      <button class="mac-btn" onclick="copyCoords('${coords}')" style="color:var(--green)">📌 ${t('copy')}</button>
-    </div>
-    ${expiry?`<div class="expire-bar">⏱ <span>${expiry}</span></div>`:''}
-    <div class="mtitle">${esc(n.title)}</div>
-    <div class="mchips">
-      <span class="mchip">🕐 ${rt(+n.created_at)}</span>
-      ${dist!=null?`<span class="mchip ${dist>5?'mchip-w':''}">${dist>5?'🔴':'🟢'} ${dist.toFixed(2)} ${t('km')}</span>`:''}
-    </div>
-    ${n.description?`<div class="mdesc">${esc(n.description)}</div>`:''}
-    <div class="tbox">
-      <div class="tbls"><span class="tbf">❌ ${fake.toFixed(1)}</span><span class="tbr">✓ ${real.toFixed(1)}</span></div>
-      <div class="tbw"><div class="tb" style="width:${p}%"></div></div>
-      <div class="tbpct">${p}${t('truth')} · ${n.vote_count||0} ${t('votes')}</div>
-    </div>
-    <div class="vrow">
-      <button class="bvote bvr" onclick="castVote('${n.id}','real')" ${!canVote?'disabled':''}>${t('verified')}</button>
-      <button class="bvote bvf" onclick="castVote('${n.id}','fake')" ${!canVote?'disabled':''}>${t('suspicious')}</button>
-    </div>
-    <div class="vhint">${!S.token?t('login_to_vote'):dist==null?t('enable_loc'):dist>5?`${dist.toFixed(1)} ${t('km')} দূরে (সীমার বাইরে)`:`${dist.toFixed(2)} ${t('km')} — ভোট দেওয়া যাবে ✓`}</div>
-    ${linksHTML?`<div style="margin-bottom:11px"><div class="dlbl" style="margin-bottom:4px">📎 সূত্র</div><div class="mlinks">${linksHTML}</div></div>`:''}
-    <div class="dgrid">
-      <div class="ditem"><div class="dlbl">স্থানাঙ্ক</div><div class="dval" onclick="copyCoords('${coords}')" style="cursor:pointer;font-size:11px">${coords}</div></div>
-      <div class="ditem"><div class="dlbl">৫০মি জোন</div><div class="dval" style="font-size:10px;word-break:break-all">${n.gh_cell||'—'}</div></div>
-    </div>
-    ${canDel?`<button class="bdel" onclick="delNews('${n.id}')">${S.admin&&!isOwner?'🛡 Admin':'🗑'} মুছুন${!S.admin?` (${Math.max(0,Math.round((10800-ageS)/60))} মিনিট)`:''}</button>`:''}`;
-}
-function closeModal(e){if(e.target===document.getElementById('modal-overlay')){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}}
-function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getElementById('bm-btn-'+id);if(btn)btn.innerHTML=s?`🔖 ${t('saved')}`:`🏷️ Save`;toast(s?t('saved'):t('unsaved'));}
-function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'BD News Map v16',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
-function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
-async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openMapCard(nid);else openModal(nid);}
-async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
-
-// ── AUTH ──────────────────────────────────────────────────────
-let _authMode='login'; // 'login' | 'register'
-function openAuth(mode='login'){_authMode=mode;_setAuthMode(mode);document.getElementById('auth-overlay').classList.add('open');}
-function closeAuth(){document.getElementById('auth-overlay').classList.remove('open');S._authCb=null;}
-function closeAuthBg(e){if(e.target===document.getElementById('auth-overlay'))closeAuth();}
-function _setAuthMode(mode){
-  _authMode=mode;
-  const isReg=mode==='register';
-  document.getElementById('auth-btn').textContent=isReg?t('register'):t('enter');
-  const sub=document.getElementById('auth-mode-sub');
-  if(sub)sub.textContent=isReg?t('register'):t('enter');
-  document.getElementById('auth-toggle-text').innerHTML=isReg
-    ?`${t('have_account')} <a href="javascript:void(0)" onclick="_setAuthMode('login')" style="color:var(--accent);font-weight:700">${t('enter')}</a>`
-    :`${t('no_account')} <a href="javascript:void(0)" onclick="_setAuthMode('register')" style="color:var(--accent);font-weight:700">${t('register')}</a>`;
-}
-async function doAuth(e){
-  if(e)e.preventDefault();
-  if(_authMode==='register'){doRegister();return;}
-  const phone=document.getElementById('a-phone').value.trim(),password=document.getElementById('a-pass').value;
-  if(!phone||!password){toast(t('phone')+' ও '+t('password')+' দিন',true);return;}
-  const btn=document.getElementById('auth-btn');btn.disabled=true;btn.textContent='যাচাই করছি…';
-  const r=await api('POST','/api/login',{phone,password});
-  btn.disabled=false;btn.textContent=t('enter');
-  if(r.error){toast(r.error,true);return;}
-  _authSuccess(r);
-}
-async function doRegister(){
-  const phone=document.getElementById('a-phone').value.trim(),password=document.getElementById('a-pass').value;
-  if(!phone||!password){toast(t('phone')+' ও '+t('password')+' দিন',true);return;}
-  if(password.length<6){toast('পাসওয়ার্ড কমপক্ষে ৬ অক্ষর',true);return;}
-  const btn=document.getElementById('auth-btn');btn.disabled=true;btn.textContent='নিবন্ধন হচ্ছে…';
-  const r=await api('POST','/api/register',{phone,password});
-  btn.disabled=false;btn.textContent=t('register');
-  if(r.error){toast(r.error,true);return;}
-  _authSuccess(r);
-}
-function _authSuccess(r){
-  S.token=r.token;S.anon_id=r.anon_id||null;S.admin=!!r.admin;
-  try{localStorage.setItem('jb_token',r.token);localStorage.setItem('jb_aid',String(r.anon_id||''));localStorage.setItem('jb_admin',r.admin?'1':'0');}catch{}
-  toast('✓ সফল');closeAuth();renderUser();
-  if(S.admin)showAdminBtn();
-  if(S._authCb){const cb=S._authCb;S._authCb=null;cb();}
-  pollNotifications();
-}
-
-// ── USER TAB ──────────────────────────────────────────────────
-function renderUser(){
-  const el=document.getElementById('user-content');
-  if(!S.token){el.innerHTML=`<div class="empty"><div class="ei">🔐</div><p>${t('login_sub')}</p><button class="btn-p" style="margin-top:10px;max-width:200px" onclick="openAuth()">${t('enter')}</button></div>${donationHTML()}`;return;}
-  const bms=BM.getAll();
-  el.innerHTML=`
-    <div class="uhero"><div class="uav">👤</div><div class="uname">익명 সদস্য${S.admin?' 🛡':''}</div><div class="usub">আপনার পরিচয় গোপন আছে</div></div>
-    <div style="padding:0 16px 12px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-p" style="flex:1;min-width:120px;background:var(--glass);border:1px solid var(--border);font-size:13px;color:var(--text)" onclick="loadHistory()">${t('history')}</button>
-      ${S.admin?`<button class="btn-p" style="flex:1;min-width:120px;background:linear-gradient(135deg,#f5c842,#c08010);font-size:13px" onclick="switchTab('admin')">⚙️ Admin Panel</button>`:''}
-      <button class="btn-p" style="flex:1;min-width:120px;background:rgba(255,75,110,.15);border:1px solid var(--red);color:var(--red);font-size:13px" onclick="logout()">${t('logout')}</button>
-    </div>
-    <div id="history-section" style="padding:0 16px 8px"></div>
-    <div style="padding:0 16px 8px">
-      <div class="slabel" style="margin-bottom:10px">🔖 ${t('bookmarks')} (${bms.length})</div>
-      ${bms.length?bms.map(b=>`<div class="lcard glass" onclick="openModal('${b.id}')">
-        <div class="l-noimg">🔖</div>
-        <div class="l-body"><div class="l-title">${esc(b.title)}</div><div class="l-meta">${rt(b.ts/1000)}</div></div>
-        <button style="font-size:18px;padding:4px 8px;color:var(--muted)" onclick="event.stopPropagation();BM.toggle('${b.id}','');renderUser()">✕</button>
-      </div>`).join(''):`<div style="text-align:center;padding:20px;font-size:12px;color:var(--muted)">${t('no_bookmarks')}</div>`}
-    </div>
-    ${donationHTML()}`;
-}
-async function loadHistory(){
-  const el=document.getElementById('history-section');if(!el)return;
-  el.innerHTML='<div class="slabel" style="margin-bottom:10px">📰 '+t('history')+'</div><div class="sp-box"><b></b><b></b><b></b></div>';
-  const d=await api('GET','/api/my/news');
-  if(d.error||!d.length){el.innerHTML=`<div class="slabel" style="margin-bottom:8px">📰 ${t('history')}</div><div style="text-align:center;padding:16px;font-size:12px;color:var(--muted)">${t('no_history')}</div>`;return;}
-  el.innerHTML=`<div class="slabel" style="margin-bottom:10px">📰 ${t('history')} (${d.length})</div>`+d.map(n=>`<div class="hist-card glass" onclick="openModal('${n.id}')">
-    ${n.thumb?`<img src="${esc(n.thumb)}" style="width:50px;height:50px;object-fit:cover;border-radius:9px;flex-shrink:0" loading="lazy">`:`<div class="hist-thumb">📰</div>`}
-    <div class="hist-info"><div class="hist-title">${esc(n.title)}</div><div class="hist-meta">${rt(n.created_at)} · ${n.real_score}✓ ${n.fake_score}✗</div></div>
-  </div>`).join('');
-}
-function showAdminBtn(){const nav=document.getElementById('desktop-nav');if(!nav||nav.querySelector('[data-tab="admin"]'))return;const btn=document.createElement('button');btn.className='dn-btn';btn.dataset.tab='admin';btn.onclick=()=>switchTab('admin');btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Admin Panel';nav.appendChild(btn);}
-function logout(){S.token=null;S.anon_id=null;S.admin=false;try{localStorage.removeItem('jb_token');localStorage.removeItem('jb_aid');localStorage.removeItem('jb_admin');}catch{}renderUser();updateNotifBadge(0);toast(t('logout'));}
-
-// ══════════════════════════════════════════════════════════════
-// ADMIN PANEL
-// ══════════════════════════════════════════════════════════════
-let _admTab='stats',_admPage=0,_admQ='';
-
-async function loadAdmin(){
-  if(!S.admin){document.getElementById('admin-content').innerHTML='<div class="empty"><p>Admin only</p></div>';return;}
-  renderAdminShell();
-  loadAdmStats();
-}
-
-function renderAdminShell(){
-  const el=document.getElementById('admin-content');
-  el.innerHTML=`
-    <div class="adm-tabs">
-      <button class="adm-tab on" id="at-stats" onclick="admSwitchTab('stats')">📊 Stats</button>
-      <button class="adm-tab" id="at-news" onclick="admSwitchTab('news')">📰 News</button>
-      <button class="adm-tab" id="at-users" onclick="admSwitchTab('users')">👥 Users</button>
-    </div>
-    <div id="adm-body"></div>`;
-}
-
-function admSwitchTab(tab){
-  _admTab=tab;_admPage=0;_admQ='';
-  ['stats','news','users'].forEach(t=>document.getElementById('at-'+t)?.classList.toggle('on',t===tab));
-  if(tab==='stats')loadAdmStats();
-  if(tab==='news')loadAdmNews();
-  if(tab==='users')loadAdmUsers();
-}
-
-async function loadAdmStats(){
-  const el=document.getElementById('adm-body');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const d=await api('GET','/api/admin/stats');if(d.error){el.innerHTML=`<p style="color:var(--red)">${esc(d.error)}</p>`;return;}
-  el.innerHTML=`
-    <div class="adm-stat-grid">
-      <div class="adm-stat"><div class="adm-stat-val">${d.news_count}</div><div class="adm-stat-lbl">📰 News</div></div>
-      <div class="adm-stat"><div class="adm-stat-val">${d.user_count}</div><div class="adm-stat-lbl">👥 Users</div></div>
-      <div class="adm-stat"><div class="adm-stat-val">${d.vote_count}</div><div class="adm-stat-lbl">🗳 Votes</div></div>
-      <div class="adm-stat"><div class="adm-stat-val" style="color:var(--red)">${d.banned_count}</div><div class="adm-stat-lbl">🚫 Banned</div></div>
-    </div>
-    <div class="adm-stat glass" style="text-align:left;margin-bottom:12px">
-      <div class="adm-stat-lbl" style="margin-bottom:6px">💾 Storage</div>
-      <div style="font-size:20px;font-weight:800">${d.storage_used_gb} GB <span style="font-size:13px;color:var(--muted)">/ ${d.storage_max_gb} GB</span></div>
-      <div style="margin-top:8px;height:6px;background:var(--bg3);border-radius:4px;overflow:hidden"><div style="height:100%;width:${d.storage_pct}%;background:${d.storage_pct>80?'var(--red)':'var(--accent)'};border-radius:4px"></div></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">${d.storage_pct}% used</div>
-    </div>
-    <div style="text-align:center;font-size:11px;color:var(--muted)">BD News Map ${d.version}</div>`;
-}
-
-async function loadAdmNews(q='',page=0){
-  _admQ=q;_admPage=page;
-  const el=document.getElementById('adm-body');if(!page)el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const url=`/api/admin/news?page=${page}&limit=30${q?'&q='+encodeURIComponent(q):''}`;
-  const d=await api('GET',url);if(d.error){el.innerHTML=`<p style="color:var(--red)">${esc(d.error)}</p>`;return;}
-  const rows=d.news;
-  if(!page){
-    el.innerHTML=`<div class="adm-search"><div class="search-wrap"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="search-inp" placeholder="Search news title…" oninput="loadAdmNews(this.value,0)" autocomplete="off" value="${esc(q)}"></div></div><div id="adm-news-list"></div>`;
+function thumbHtml(item, size = 'list') {
+  if (item.thumb) {
+    const h = size === 'hero' ? 'hero-img' : size === 'mini' ? 'mini-thumb' : 'list-thumb';
+    return `<img class="${h}" src="${esc(item.thumb)}" alt="" loading="lazy">`;
   }
-  const list=document.getElementById('adm-news-list');
-  if(!list)return;
-  if(!rows.length&&!page){list.innerHTML='<div class="empty"><p>No news found.</p></div>';return;}
-  list.innerHTML+=(rows||[]).map(n=>`<div class="adm-row">
-    ${n.thumb?`<img src="${esc(n.thumb)}" style="width:40px;height:40px;object-fit:cover;border-radius:7px;flex-shrink:0">`:'<div style="width:40px;height:40px;border-radius:7px;background:var(--bg3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">📰</div>'}
-    <div class="adm-row-info"><div class="adm-row-title">${esc(n.title)}</div><div class="adm-row-meta">uid:${n.owner_id} · ${+n.real_score}✓ ${+n.fake_score}✗ · ${n.vote_count}v</div></div>
-    <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-      <button class="adm-btn" onclick="openModal('${n.id}')">👁</button>
-      <button class="adm-btn adm-del" onclick="admDelNews('${n.id}',this)">🗑</button>
+  const emoji = '📰';
+  if (size === 'hero') return `<div class="hero-img-placeholder">${emoji}</div>`;
+  if (size === 'mini') return `<div class="mini-thumb-ph">${emoji}</div>`;
+  return `<div class="list-thumb-ph">${emoji}</div>`;
+}
+
+function timeAgo(ts) {
+  const s = Math.max(0, nowSec() - ts);
+  return t('timeAgo')(s);
+}
+
+function distChip(item) {
+  if (S.userLat === null) return '';
+  const d = hav(S.userLat, S.userLon, item.lat, item.lon);
+  const cls = d > 5 ? 'chip dist-far' : 'chip';
+  const label = d < 1 ? `${Math.round(d*1000)}মি` : `${d.toFixed(1)}কিমি`;
+  return `<span class="${cls}">📍 ${label}</span>`;
+}
+
+// ── API ──────────────────────────────────────
+async function api(url, opts = {}) {
+  if (S.token && !opts.headers) opts.headers = {};
+  if (S.token) opts.headers['Authorization'] = 'Bearer ' + S.token;
+  const res = await fetch(url, opts);
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok) {
+    const err = ct.includes('json') ? await res.json() : { error: res.statusText };
+    throw new Error(err.error || 'Request failed');
+  }
+  return ct.includes('json') ? res.json() : res.text();
+}
+
+// ── GPS ──────────────────────────────────────
+async function gps() {
+  if (S.userLat !== null) return { lat: S.userLat, lon: S.userLon };
+  return new Promise(resolve => {
+    if (!navigator.geolocation) {
+      S.userLat = 23.8103; S.userLon = 90.4125;
+      resolve({ lat: S.userLat, lon: S.userLon });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      p => { S.userLat = p.coords.latitude; S.userLon = p.coords.longitude; resolve({ lat: S.userLat, lon: S.userLon }); },
+      () => { S.userLat = 23.8103; S.userLon = 90.4125; resolve({ lat: S.userLat, lon: S.userLon }); },
+      { timeout: 8000, enableHighAccuracy: true }
+    );
+  });
+}
+
+// ── TOAST ────────────────────────────────────
+let _toastTimer;
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+}
+
+// ── THEME / LANG ──────────────────────────────
+function initTheme() {
+  const th = localStorage.getItem('jb_theme') || 'dark';
+  document.documentElement.dataset.theme = th;
+  document.getElementById('theme-btn').textContent = th === 'dark' ? '☀️' : '🌙';
+}
+
+document.getElementById('theme-btn').onclick = () => {
+  const cur = document.documentElement.dataset.theme;
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('jb_theme', next);
+  document.getElementById('theme-btn').textContent = next === 'dark' ? '☀️' : '🌙';
+};
+
+document.getElementById('lang-btn').onclick = () => {
+  LANG = LANG === 'bn' ? 'en' : 'bn';
+  localStorage.setItem('jb_lang', LANG);
+  document.getElementById('lang-btn').textContent = LANG === 'bn' ? 'EN' : 'বাং';
+  applyI18n();
+  renderQuranCard();
+};
+
+// ── QURAN VERSES ──────────────────────────────
+const QURAN_VERSES = [
+  { ar: 'إِنَّا لِلَّهِ وَإِنَّا إِلَيْهِ رَاجِعُونَ', bn: 'নিশ্চয়ই আমরা আল্লাহর জন্য এবং নিশ্চয়ই আমরা তাঁর কাছে প্রত্যাবর্তনকারী।', en: 'Indeed, we belong to Allah, and indeed to Him we shall return.', ref: 'আল-বাকারা ২:১৫৬' },
+  { ar: 'وَقُلِ اعْمَلُوا فَسَيَرَى اللَّهُ عَمَلَكُمْ', bn: 'বলুন, কাজ করতে থাকো; আল্লাহ তোমাদের কাজ দেখবেন।', en: 'Say: Work! Allah will see your deeds.', ref: 'আত-তাওবা ৯:১০৫' },
+  { ar: 'يَا أَيُّهَا الَّذِينَ آمَنُوا كُونُوا قَوَّامِينَ بِالْقِسْطِ', bn: 'হে মুমিনগণ! ন্যায়বিচারে দৃঢ়ভাবে প্রতিষ্ঠিত থাকো।', en: 'O believers! Stand firmly for justice.', ref: 'আন-নিসা ৪:১৩৫' },
+  { ar: 'وَلَا تَقْفُ مَا لَيْسَ لَكَ بِهِ عِلْمٌ', bn: 'যে বিষয়ে তোমার জ্ঞান নেই, তার পেছনে পড়ো না।', en: 'Do not pursue that of which you have no knowledge.', ref: 'আল-ইসরা ১৭:৩৬' },
+  { ar: 'وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَى', bn: 'সৎকাজ ও তাকওয়ার ক্ষেত্রে পরস্পর সহযোগিতা করো।', en: 'Cooperate in righteousness and piety.', ref: 'আল-মায়িদা ৫:২' },
+  { ar: 'إِنَّ اللَّهَ لَا يُضِيعُ أَجْرَ الْمُحْسِنِينَ', bn: 'নিশ্চয়ই আল্লাহ সৎকর্মশীলদের পুরস্কার নষ্ট করেন না।', en: 'Allah does not waste the reward of the doers of good.', ref: 'আত-তাওবা ৯:১২০' },
+  { ar: 'وَأَنتُمُ الْأَعْلَوْنَ إِن كُنتُم مُّؤْمِنِينَ', bn: 'তোমরাই উপরে থাকবে, যদি তোমরা বিশ্বাসী হও।', en: 'You will be superior, if you are believers.', ref: 'আল-ইমরান ৩:১৩৯' }
+];
+
+function renderQuranCard() {
+  const v = QURAN_VERSES[Math.floor(Math.random() * QURAN_VERSES.length)];
+  document.getElementById('quran-card-wrap').innerHTML = `
+    <div class="quran-card">
+      <div class="quran-arabic">${esc(v.ar)}</div>
+      <div class="quran-bn">${esc(LANG === 'en' ? v.en : v.bn)}</div>
+      <div class="quran-ref">${esc(v.ref)}</div>
+    </div>`;
+}
+
+// ── TABS ─────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.screen').forEach(el => el.classList.toggle('active', el.id === `screen-${tab}`));
+  S.activeTab = tab;
+  if (tab === 'home') { renderQuranCard(); loadHome(); }
+  if (tab === 'map') initMap();
+  if (tab === 'explore') loadExplore();
+  if (tab === 'notif') loadNotifications();
+  if (tab === 'user') renderUser();
+}
+
+// ── HOME ─────────────────────────────────────
+async function loadHome(force = false) {
+  if (force) CACHE.invalidate();
+  try {
+    const { lat, lon } = await gps();
+    await CACHE.load(lat, lon);
+    renderHome();
+  } catch (e) {
+    document.getElementById('home-content').innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function renderHome() {
+  const feed = CACHE.feed;
+  if (!feed.length) {
+    document.getElementById('home-content').innerHTML = `<div class="empty-state"><span class="empty-state-icon">📭</span><p>${t('noNews')}</p></div>`;
+    return;
+  }
+  let html = '';
+  const [top, ...rest] = feed;
+  // Hero
+  const ps = pct(top); const st = statusLabel(ps);
+  html += `<div class="hero-card" onclick="openDetail('${esc(top.id)}')">
+    ${thumbHtml(top, 'hero')}
+    <div class="hero-body">
+      <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${ps}%"></div></div>
+      <div class="card-title">${esc(top.title)}</div>
+      <div class="card-meta">
+        <span class="chip ${st.cls}">${st.label}</span>
+        <span class="chip">⏱ ${timeAgo(top.created_at)}</span>
+        ${distChip(top)}
+      </div>
     </div>
-  </div>`).join('');
-  if(rows.length===30){const btn=document.createElement('button');btn.className='btn-p';btn.style.cssText='margin-top:10px;background:var(--glass);border:1px solid var(--border);color:var(--text);font-size:13px';btn.textContent='Load More';btn.onclick=()=>loadAdmNews(_admQ,_admPage+1);list.appendChild(btn);}
+  </div>`;
+
+  // Grid of 4
+  const grid = rest.slice(0, 4);
+  if (grid.length) {
+    html += '<div class="grid2">';
+    grid.forEach(n => {
+      const p2 = pct(n); const s2 = statusLabel(p2);
+      html += `<div class="mini-card" onclick="openDetail('${esc(n.id)}')">
+        ${thumbHtml(n, 'mini')}
+        <div class="mini-body">
+          <div class="mini-title">${esc(n.title)}</div>
+          <div class="card-meta"><span class="chip ${s2.cls}">${s2.label}</span></div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // List
+  const listItems = rest.slice(4);
+  if (listItems.length) {
+    html += `<div class="section-label">আরও সংবাদ</div>`;
+    listItems.forEach(n => {
+      const p3 = pct(n); const s3 = statusLabel(p3);
+      html += `<div class="list-card" onclick="openDetail('${esc(n.id)}')">
+        ${thumbHtml(n, 'list')}
+        <div class="list-body">
+          <div class="list-title">${esc(n.title)}</div>
+          <div class="card-meta"><span class="chip ${s3.cls}">${s3.label}</span><span class="chip">⏱ ${timeAgo(n.created_at)}</span>${distChip(n)}</div>
+        </div>
+      </div>`;
+    });
+  }
+  document.getElementById('home-content').innerHTML = html;
 }
 
-async function admDelNews(id,btn){
-  if(!confirm('Delete this news?'))return;btn.disabled=true;
-  const r=await api('DELETE','/api/admin/news/'+id);
-  if(r.error){toast(r.error,true);btn.disabled=false;return;}
-  btn.closest('.adm-row').remove();CACHE.invalidate();toast('Deleted ✓');
+// Pull-to-refresh
+let _pullStart = 0;
+const homeScroll = document.getElementById('home-scroll');
+homeScroll.addEventListener('touchstart', e => { _pullStart = e.touches[0].clientY; }, { passive: true });
+homeScroll.addEventListener('touchend', e => {
+  if (homeScroll.scrollTop === 0 && e.changedTouches[0].clientY - _pullStart > 80) loadHome(true);
+}, { passive: true });
+
+// ── MAP ──────────────────────────────────────
+let MAP = null, markersLayer = null, userMarker = null;
+
+async function initMap() {
+  if (S.mapReady) { refreshMapMarkers(); return; }
+  S.mapReady = true;
+  const { lat, lon } = await gps();
+  MAP = L.map('map', { zoomControl: false, attributionControl: false }).setView([lat, lon], 14);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(MAP);
+  L.control.zoom({ position: 'topright' }).addTo(MAP);
+  markersLayer = L.layerGroup().addTo(MAP);
+  setUserMarker(lat, lon);
+  MAP.on('click', e => {
+    if (MAP.getZoom() < 13) return;
+    const cell = snapToCell(e.latlng.lat, e.latlng.lng);
+    const item = CACHE.markers.find(m => m.cell_key === cell.key);
+    if (item) showMapPanel(item);
+  });
+  await refreshMapMarkers();
 }
 
-async function loadAdmUsers(){
-  const el=document.getElementById('adm-body');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
-  const d=await api('GET','/api/admin/users');if(d.error){el.innerHTML=`<p style="color:var(--red)">${esc(d.error)}</p>`;return;}
-  if(!d.length){el.innerHTML='<div class="empty"><p>No users yet.</p></div>';return;}
-  el.innerHTML=d.map(u=>`<div class="adm-row" id="urow-${u.id}">
-    <div style="font-size:24px;flex-shrink:0">${u.banned?'🚫':'👤'}</div>
-    <div class="adm-row-info">
-      <div class="adm-row-title">${esc(u.username)} ${u.banned?'<span style="color:var(--red);font-size:10px">[BANNED]</span>':''}</div>
-      <div class="adm-row-meta">${esc(u.phone)} · ${u.news_count} posts · id:${u.id}</div>
+function setUserMarker(lat, lon) {
+  if (userMarker) userMarker.remove();
+  const icon = L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+  userMarker = L.marker([lat, lon], { icon }).addTo(MAP);
+}
+
+async function refreshMapMarkers() {
+  if (!MAP) return;
+  const { lat, lon } = await gps();
+  await CACHE.load(lat, lon);
+  markersLayer.clearLayers();
+  CACHE.markers.forEach(m => {
+    const p = pct(m);
+    const cls = p >= 65 ? 'high-real' : p <= 35 ? 'high-fake' : '';
+    const icon = L.divIcon({ className: '', html: `<div class="news-marker-icon ${cls}"></div>`, iconSize: [20, 20], iconAnchor: [10, 20] });
+    L.marker([m.lat, m.lon], { icon }).addTo(markersLayer).on('click', () => showMapPanel(m));
+  });
+}
+
+async function mapLocate() {
+  S.userLat = null; S.userLon = null;
+  const { lat, lon } = await gps();
+  if (MAP) { MAP.setView([lat, lon], 15); setUserMarker(lat, lon); }
+}
+
+function showMapPanel(item) {
+  const panel = document.getElementById('map-panel');
+  const content = document.getElementById('map-panel-content');
+  content.innerHTML = '<div class="spinner"></div>';
+  panel.classList.add('open');
+  api(`/api/news/${item.id}`).then(news => {
+    _renderNewsDetail(content, news, true);
+  }).catch(e => { content.innerHTML = `<p style="color:var(--red)">${esc(e.message)}</p>`; });
+}
+
+function closeMapPanel() {
+  document.getElementById('map-panel').classList.remove('open');
+}
+
+// ── EXPLORE ──────────────────────────────────
+let _exploreAll = [];
+
+async function loadExplore() {
+  const list = document.getElementById('explore-list');
+  try {
+    const { lat, lon } = await gps();
+    await CACHE.load(lat, lon);
+    _exploreAll = [...CACHE.feed];
+    renderExploreList(_exploreAll);
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state"><span>⚠️</span><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function filterExplore(q) {
+  const lower = q.toLowerCase();
+  const filtered = q ? _exploreAll.filter(n => (n.title + ' ' + (n.description || '')).toLowerCase().includes(lower)) : _exploreAll;
+  renderExploreList(filtered);
+}
+
+function renderExploreList(items) {
+  if (!items.length) {
+    document.getElementById('explore-list').innerHTML = `<div class="empty-state"><span class="empty-state-icon">🔍</span><p>${t('noNews')}</p></div>`;
+    return;
+  }
+  let html = '';
+  items.forEach(n => {
+    const p = pct(n); const st = statusLabel(p);
+    html += `<div class="list-card" onclick="openDetail('${esc(n.id)}')">
+      ${thumbHtml(n)}
+      <div class="list-body">
+        <div class="list-title">${esc(n.title)}</div>
+        <div class="card-meta"><span class="chip ${st.cls}">${st.label}</span><span class="chip">⏱ ${timeAgo(n.created_at)}</span>${distChip(n)}</div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('explore-list').innerHTML = html;
+}
+
+// ── NOTIFICATIONS ─────────────────────────────
+let _notifPollTimer;
+
+async function loadNotifications() {
+  if (!S.token) {
+    document.getElementById('notif-list').innerHTML = `<div class="login-prompt"><div class="login-prompt-icon">🔔</div><h3>বিজ্ঞপ্তি দেখুন</h3><p>বিজ্ঞপ্তি পেতে লগইন করুন।</p><button class="btn-primary" onclick="openAuth()">লগইন করুন</button></div>`;
+    return;
+  }
+  try {
+    const data = await api('/api/notifications');
+    renderNotifications(data.notifications || []);
+    updateNotifBadge(data.unseen || 0);
+  } catch (e) {
+    document.getElementById('notif-list').innerHTML = `<p style="color:var(--red);padding:20px;text-align:center">${esc(e.message)}</p>`;
+  }
+}
+
+function renderNotifications(items) {
+  if (!items.length) {
+    document.getElementById('notif-list').innerHTML = `<div class="empty-state"><span class="empty-state-icon">🔕</span><p>কোনো বিজ্ঞপ্তি নেই</p></div>`;
+    return;
+  }
+  document.getElementById('notif-list').innerHTML = items.map(n => `
+    <div class="notif-item ${n.seen ? '' : 'unseen'}" onclick="openDetail('${esc(n.news_id)}')">
+      <div class="notif-dot ${n.seen ? 'seen' : ''}"></div>
+      <div class="notif-body">
+        <div class="notif-title">${esc(n.title)}</div>
+        <div class="notif-meta">📍 ${n.dist_km.toFixed(1)} কিমি দূরে · ${timeAgo(n.created_at)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function updateNotifBadge(count) {
+  const dot = document.getElementById('notif-dot');
+  const navDot = document.getElementById('nav-notif-dot');
+  if (count > 0) { dot.style.display = 'block'; navDot.style.display = 'block'; }
+  else { dot.style.display = 'none'; navDot.style.display = 'none'; }
+}
+
+async function markAllRead() {
+  if (!S.token) return;
+  try {
+    await api('/api/notifications/seen', { method: 'POST' });
+    updateNotifBadge(0);
+    loadNotifications();
+  } catch (e) { toast(e.message, true); }
+}
+
+function pollNotifications() {
+  clearInterval(_notifPollTimer);
+  if (!S.token) return;
+  const poll = async () => {
+    try {
+      const data = await api('/api/notifications');
+      updateNotifBadge(data.unseen || 0);
+    } catch {}
+  };
+  poll();
+  _notifPollTimer = setInterval(poll, 90000);
+}
+
+// ── USER SCREEN ───────────────────────────────
+function renderUser() {
+  const el = document.getElementById('user-content');
+  if (!S.token) {
+    el.innerHTML = `
+      <div class="login-prompt">
+        <div class="login-prompt-icon">👤</div>
+        <h3>স্বাগতম</h3>
+        <p>রিপোর্ট করতে এবং ভোট দিতে অ্যাকাউন্ট প্রয়োজন।</p>
+        <button class="btn-primary" onclick="openAuth()">লগইন করুন</button>
+        <button class="btn-secondary" onclick="switchAuth('register');openAuth()">নিবন্ধন করুন</button>
+      </div>
+      <div class="sep"></div>
+      ${donateHtml()}`;
+    return;
+  }
+  const username = localStorage.getItem('jb_uname') || `ব্যবহারকারী_${S.anon_id}`;
+  el.innerHTML = `
+    <div class="user-avatar">👤</div>
+    <div class="user-name">${esc(username)}</div>
+    <div class="user-sub">ID: ${S.anon_id}</div>
+    <button class="action-btn" onclick="openMyReports()"><span class="action-icon">📋</span> ${t('myReports')}</button>
+    <button class="action-btn" onclick="openBookmarks()"><span class="action-icon">🔖</span> সংরক্ষিত সংবাদ</button>
+    ${S.admin ? `<button class="action-btn" onclick="openAdmin()"><span class="action-icon">⚙️</span> অ্যাডমিন প্যানেল</button>` : ''}
+    <button class="action-btn danger" onclick="doLogout()"><span class="action-icon">🚪</span> ${t('logout')}</button>
+  `;
+}
+
+function donateHtml() {
+  return `<div class="donate-section"><div class="donate-title">💚 সহায়তা করুন</div>
+    <div class="donate-row"><div class="donate-logo">🌸</div><div class="donate-info"><div class="donate-name">bKash</div><div class="donate-num">01700000000</div></div><button class="copy-btn" onclick="copyNum('01700000000')">কপি</button></div>
+    <div class="donate-row"><div class="donate-logo">🟠</div><div class="donate-info"><div class="donate-name">Nagad</div><div class="donate-num">01700000001</div></div><button class="copy-btn" onclick="copyNum('01700000001')">কপি</button></div>
+    <div class="donate-row"><div class="donate-logo">🔵</div><div class="donate-info"><div class="donate-name">Rocket</div><div class="donate-num">01700000002</div></div><button class="copy-btn" onclick="copyNum('01700000002')">কপি</button></div>
+  </div>`;
+}
+
+function copyNum(num) {
+  navigator.clipboard?.writeText(num);
+  toast(t('copied'));
+}
+
+// ── AUTH ─────────────────────────────────────
+let _authMode = 'login';
+
+function openAuth(cb) {
+  if (cb) S._authCb = cb;
+  document.getElementById('auth-overlay').classList.add('open');
+  document.getElementById('auth-error').classList.remove('show');
+  document.getElementById('auth-phone').focus();
+}
+
+function closeAuth(e) { if (e.target.id === 'auth-overlay') closeOverlay('auth-overlay'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+
+function switchAuth(mode) {
+  _authMode = mode;
+  document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-register').classList.toggle('active', mode === 'register');
+  document.getElementById('auth-title').textContent = t(mode);
+  document.getElementById('auth-submit').textContent = t(mode) + ' করুন';
+  document.getElementById('auth-error').classList.remove('show');
+}
+
+async function doAuth() {
+  const phone = document.getElementById('auth-phone').value.trim();
+  const pass = document.getElementById('auth-pass').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.classList.remove('show');
+
+  if (!phone || !pass) { errEl.textContent = 'ফোন ও পাসওয়ার্ড প্রয়োজন'; errEl.classList.add('show'); return; }
+  if (pass.length < 6) { errEl.textContent = 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষর'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('auth-submit');
+  btn.disabled = true; btn.textContent = '…';
+
+  try {
+    const data = await api(`/api/${_authMode}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password: pass })
+    });
+    S.token = data.token; S.anon_id = data.anon_id; S.admin = data.admin;
+    localStorage.setItem('jb_token', data.token);
+    localStorage.setItem('jb_aid', data.anon_id);
+    localStorage.setItem('jb_admin', data.admin ? '1' : '0');
+    if (data.username) localStorage.setItem('jb_uname', data.username);
+    closeOverlay('auth-overlay');
+    toast('✅ স্বাগতম!');
+    pollNotifications();
+    if (S._authCb) { S._authCb(); S._authCb = null; }
+    renderUser();
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.add('show');
+  } finally {
+    btn.disabled = false; btn.textContent = t(_authMode) + ' করুন';
+  }
+}
+
+function doLogout() {
+  S.token = null; S.anon_id = null; S.admin = false;
+  ['jb_token', 'jb_aid', 'jb_admin', 'jb_uname'].forEach(k => localStorage.removeItem(k));
+  clearInterval(_notifPollTimer);
+  updateNotifBadge(0);
+  renderUser();
+  toast('লগআউট হয়েছে');
+}
+
+// ── NEWS DETAIL ───────────────────────────────
+async function openDetail(id) {
+  const overlay = document.getElementById('detail-overlay');
+  const body = document.getElementById('detail-body');
+  body.innerHTML = '<div class="spinner"></div>';
+  overlay.classList.add('open');
+  try {
+    const news = await api(`/api/news/${id}`);
+    _renderNewsDetail(body, news, false);
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--red)">${esc(e.message)}</p>`;
+  }
+}
+
+function closeDetail(e) { if (e.target.id === 'detail-overlay') closeOverlay('detail-overlay'); }
+
+function _renderNewsDetail(container, news, inMapPanel) {
+  const p = pct(news); const st = statusLabel(p);
+  const expSec = news.expires_at - nowSec();
+  const isSaved = BM.has(news.id);
+  const dist = S.userLat !== null ? hav(S.userLat, S.userLon, news.lat, news.lon) : null;
+  const canVote = S.token && dist !== null && dist <= 5;
+  const canDelete = S.token && (S.admin || (news.owner_id === S.anon_id && (nowSec() - news.created_at) < 10800));
+
+  let imagesHtml = '';
+  if (news.images && news.images.length) {
+    imagesHtml = `<div class="detail-images">
+      <div class="detail-img-scroll">${news.images.map(src => `<img src="${esc(src)}" alt="" loading="lazy">`).join('')}</div>
+      ${news.images.length > 1 ? `<div class="img-count-badge">📷 ${news.images.length}</div>` : ''}
+    </div>`;
+  }
+
+  let voteHint = '';
+  if (!S.token) voteHint = t('loginToVote');
+  else if (dist === null) voteHint = 'অবস্থান জানা নেই';
+  else if (dist > 5) voteHint = `${t('tooFar')} (${dist.toFixed(1)}কিমি)`;
+
+  let linksHtml = '';
+  if (news.links) {
+    const urls = news.links.split(/[\s,]+/).filter(Boolean);
+    linksHtml = `<div class="links-section">🔗 উৎস: ${urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join(' ')}</div>`;
+  }
+
+  container.innerHTML = `
+    ${imagesHtml}
+    <div class="expiry-chip">⏳ ${t('expiresIn')(expSec)}</div>
+    <div class="detail-title">${esc(news.title)}</div>
+    <div class="card-meta" style="margin-bottom:12px">
+      <span class="chip ${st.cls}">${st.label}</span>
+      <span class="chip">⏱ ${timeAgo(news.created_at)}</span>
+      ${dist !== null ? `<span class="chip ${dist > 5 ? 'dist-far' : ''}">📍 ${dist < 1 ? Math.round(dist*1000)+'মি' : dist.toFixed(1)+'কিমি'}</span>` : ''}
     </div>
-    <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-      ${u.banned
-        ?`<button class="adm-btn adm-unban" onclick="admBan(${u.id},false,this)">Unban</button>`
-        :`<button class="adm-btn adm-ban" onclick="admBan(${u.id},true,this)">Ban</button>`}
-      <button class="adm-btn adm-purge" onclick="admPurgeUser(${u.id},this)">Del posts</button>
+    ${news.description ? `<div class="detail-desc">${esc(news.description)}</div>` : ''}
+    <div class="truth-section">
+      <div class="truth-label">
+        <span>❌ ${t('fake')}: ${(news.fake_score||0).toFixed(1)}</span>
+        <span><strong>${p}%</strong> ${t('real')}</span>
+        <span>✅ ${t('real')}: ${(news.real_score||0).toFixed(1)}</span>
+      </div>
+      <div class="truth-bar"><div class="truth-fill" style="background:linear-gradient(90deg,var(--red) ${100-p}%,var(--green) ${100-p}%);width:100%"></div></div>
+      <div class="vote-btns">
+        <button class="vote-btn real ${news._myVote === 'real' ? 'active' : ''}" ${canVote?'':'disabled'} onclick="doVote('${esc(news.id)}','real',this.closest('.truth-section'))">✅ ${t('real')}</button>
+        <button class="vote-btn fake ${news._myVote === 'fake' ? 'active' : ''}" ${canVote?'':'disabled'} onclick="doVote('${esc(news.id)}','fake',this.closest('.truth-section'))">❌ ${t('fake')}</button>
+      </div>
+      ${voteHint ? `<div class="vote-hint">${esc(voteHint)}</div>` : ''}
     </div>
-  </div>`).join('');
+    <div class="detail-actions">
+      <button class="det-act-btn ${isSaved ? 'saved' : ''}" id="save-btn-${news.id}" onclick="toggleSave('${esc(news.id)}','${esc(news.title)}',this)">🔖 ${isSaved ? 'সংরক্ষিত' : 'সেভ'}</button>
+      <button class="det-act-btn" onclick="shareNews('${esc(news.id)}','${esc(news.title)}')">📤 শেয়ার</button>
+      <button class="det-act-btn" onclick="copyCoords(${news.lat},${news.lon})">📋 কোর্ড</button>
+      ${canDelete ? `<button class="det-act-btn delete" onclick="deleteNews('${esc(news.id)}')">🗑️ মুছুন</button>` : ''}
+    </div>
+    ${linksHtml}
+    <div class="coord-section">
+      lat: ${news.lat.toFixed(6)} · lon: ${news.lon.toFixed(6)}<br>
+      cell: ${esc(news.cell_key)} · ID: ${esc(news.id)}
+    </div>
+  `;
 }
 
-async function admBan(uid,ban,btn){
-  btn.disabled=true;
-  const r=await api('POST',`/api/admin/users/${uid}/ban`,{ban});
-  if(r.error){toast(r.error,true);btn.disabled=false;return;}
-  toast(ban?`User ${uid} banned`:`User ${uid} unbanned`);loadAdmUsers();
-}
-async function admPurgeUser(uid,btn){
-  if(!confirm(`Delete ALL news by user ${uid}?`))return;btn.disabled=true;
-  const r=await api('DELETE',`/api/admin/users/${uid}/news`);
-  if(r.error){toast(r.error,true);btn.disabled=false;return;}
-  CACHE.invalidate();toast(`Deleted ${r.deleted} posts`);loadAdmUsers();
+async function doVote(newsId, type, section) {
+  if (!S.token) { openAuth(() => openDetail(newsId)); return; }
+  const { lat, lon } = await gps();
+  try {
+    const res = await api('/api/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ news_id: newsId, type, user_lat: lat, user_lon: lon })
+    });
+    toast(type === 'real' ? t('votedReal') : t('votedFake'));
+    // Refresh detail
+    const news = await api(`/api/news/${newsId}`);
+    const container = section?.closest('.sheet-body') || section?.closest('#map-panel-content');
+    if (container) _renderNewsDetail(container, news, !!section?.closest('#map-panel-content'));
+  } catch (e) { toast(e.message, true); }
 }
 
-// ── BOOT ──────────────────────────────────────────────────────
-(async function init(){
-  applyTheme();applyI18n();
-  // Show desktop nav on wide screens
-  if(window.innerWidth>=900)document.getElementById('desktop-nav').style.display='flex';
-  gps();showVerse('vh');loadHome();renderUser();initPTR();
-  if(S.admin)showAdminBtn();
-  // Poll notifications every 90s
-  if(S.token){pollNotifications();setInterval(pollNotifications,90000);}
-})();
+function toggleSave(id, title, btn) {
+  const saved = BM.toggle(id, title);
+  btn.textContent = saved ? '🔖 সংরক্ষিত' : '🔖 সেভ';
+  btn.classList.toggle('saved', saved);
+  toast(saved ? t('saved') : t('unsaved'));
+}
+
+function shareNews(id, title) {
+  const url = `${location.origin}?news=${id}`;
+  if (navigator.share) { navigator.share({ title, url }); }
+  else { navigator.clipboard?.writeText(url); toast(t('copied')); }
+}
+
+function copyCoords(lat, lon) {
+  navigator.clipboard?.writeText(`${lat},${lon}`);
+  toast(t('copied'));
+}
+
+async function deleteNews(id) {
+  if (!confirm('এই সংবাদটি মুছে ফেলবেন?')) return;
+  try {
+    await api(`/api/news/${id}`, { method: 'DELETE' });
+    CACHE.invalidate();
+    closeOverlay('detail-overlay');
+    closeMapPanel();
+    toast(t('deleted'));
+    loadHome(true);
+    refreshMapMarkers();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── REPORT ────────────────────────────────────
+let reportMap = null, reportPin = null, _selectedImgs = [];
+
+async function openReport() {
+  if (!S.token) { openAuth(() => openReport()); return; }
+  document.getElementById('report-overlay').classList.add('open');
+  document.getElementById('report-error').classList.remove('show');
+  document.getElementById('rep-title').value = '';
+  document.getElementById('rep-desc').value = '';
+  document.getElementById('rep-links').value = '';
+  document.getElementById('rep-title-count').textContent = '0';
+  document.getElementById('rep-desc-count').textContent = '0';
+  document.getElementById('img-preview-grid').innerHTML = '';
+  _selectedImgs = [];
+  document.getElementById('rep-imgs').value = '';
+
+  document.getElementById('rep-title').oninput = function() { document.getElementById('rep-title-count').textContent = this.value.length; };
+  document.getElementById('rep-desc').oninput = function() { document.getElementById('rep-desc-count').textContent = this.value.length; };
+
+  const { lat, lon } = await gps();
+  S.reportLat = lat; S.reportLon = lon;
+
+  setTimeout(() => {
+    if (!reportMap) {
+      reportMap = L.map('report-map', { zoomControl: false, attributionControl: false }).setView([lat, lon], 15);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(reportMap);
+      reportMap.on('click', e => setReportPin(e.latlng.lat, e.latlng.lng));
+    } else {
+      reportMap.setView([lat, lon], 15);
+      reportMap.invalidateSize();
+    }
+    setReportPin(lat, lon);
+  }, 200);
+}
+
+function setReportPin(lat, lon) {
+  const cell = snapToCell(lat, lon);
+  S.reportLat = cell.lat; S.reportLon = cell.lon;
+  const dist = S.userLat !== null ? hav(S.userLat, S.userLon, cell.lat, cell.lon) : 0;
+  S.pinInRange = dist <= 5;
+  const statusEl = document.getElementById('report-pin-status');
+  if (!S.pinInRange) { statusEl.textContent = t('pinTooFar'); statusEl.style.color = 'var(--red)'; }
+  else { statusEl.textContent = t('pinOk') + ` (${dist.toFixed(2)}কিমি) · Cell: ${cell.key}`; statusEl.style.color = 'var(--green)'; }
+
+  if (reportPin) reportPin.remove();
+  const icon = L.divIcon({ className: '', html: '<div class="news-marker-icon"></div>', iconSize: [20, 20], iconAnchor: [10, 20] });
+  reportPin = L.marker([cell.lat, cell.lon], { icon }).addTo(reportMap);
+}
+
+function closeReport(e) { if (e.target.id === 'report-overlay') closeOverlay('report-overlay'); }
+
+function handleImgSelect(input) {
+  const files = Array.from(input.files);
+  _selectedImgs = [..._selectedImgs, ...files].slice(0, 10);
+  renderImgPreviews();
+}
+
+function renderImgPreviews() {
+  const grid = document.getElementById('img-preview-grid');
+  grid.innerHTML = _selectedImgs.map((f, i) => {
+    const url = URL.createObjectURL(f);
+    return `<div class="img-preview-item">
+      <img src="${url}" alt="">
+      <button class="img-remove" onclick="removeImg(${i})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function removeImg(i) { _selectedImgs.splice(i, 1); renderImgPreviews(); }
+
+async function submitReport() {
+  const title = document.getElementById('rep-title').value.trim();
+  const errEl = document.getElementById('report-error');
+  errEl.classList.remove('show');
+
+  if (!title) { errEl.textContent = 'শিরোনাম প্রয়োজন'; errEl.classList.add('show'); return; }
+  if (!S.pinInRange) { errEl.textContent = t('pinTooFar'); errEl.classList.add('show'); return; }
+
+  // Check cell availability
+  try {
+    const nearby = await api(`/api/news/nearby?lat=${S.reportLat}&lon=${S.reportLon}`);
+    const cell = snapToCell(S.reportLat, S.reportLon);
+    if (nearby.find(n => n.cell_key === cell.key)) {
+      errEl.textContent = t('cellTaken'); errEl.classList.add('show'); return;
+    }
+  } catch {}
+
+  const { lat, lon } = await gps();
+  const fd = new FormData();
+  fd.append('title', title);
+  fd.append('description', document.getElementById('rep-desc').value);
+  fd.append('lat', S.reportLat);
+  fd.append('lon', S.reportLon);
+  fd.append('links', document.getElementById('rep-links').value);
+  fd.append('user_lat', lat);
+  fd.append('user_lon', lon);
+  _selectedImgs.forEach(f => fd.append('images', f));
+
+  const btn = document.getElementById('rep-submit');
+  btn.disabled = true; btn.textContent = '⏳ পাঠানো হচ্ছে…';
+
+  try {
+    await api('/api/news', { method: 'POST', body: fd });
+    CACHE.invalidate();
+    closeOverlay('report-overlay');
+    toast(t('posted'));
+    loadHome(true);
+    if (S.mapReady) refreshMapMarkers();
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.add('show');
+  } finally {
+    btn.disabled = false; btn.textContent = '📤 রিপোর্ট পাঠান';
+  }
+}
+
+// ── MY REPORTS ────────────────────────────────
+async function openMyReports() {
+  document.getElementById('myreports-overlay').classList.add('open');
+  document.getElementById('myreports-body').innerHTML = '<div class="spinner"></div>';
+  try {
+    const items = await api('/api/my/news');
+    if (!items.length) { document.getElementById('myreports-body').innerHTML = `<div class="empty-state"><span class="empty-state-icon">📭</span><p>কোনো রিপোর্ট নেই</p></div>`; return; }
+    let html = '';
+    items.forEach(n => {
+      const p = pct(n); const st = statusLabel(p);
+      html += `<div class="list-card" onclick="openDetail('${esc(n.id)}')">
+        ${thumbHtml(n)}
+        <div class="list-body">
+          <div class="list-title">${esc(n.title)}</div>
+          <div class="card-meta"><span class="chip ${st.cls}">${st.label}</span><span class="chip">⏱ ${timeAgo(n.created_at)}</span></div>
+        </div>
+      </div>`;
+    });
+    document.getElementById('myreports-body').innerHTML = html;
+  } catch (e) { document.getElementById('myreports-body').innerHTML = `<p style="color:var(--red);text-align:center;padding:20px">${esc(e.message)}</p>`; }
+}
+
+function closeMyReports(e) { if (e.target.id === 'myreports-overlay') closeOverlay('myreports-overlay'); }
+
+// ── BOOKMARKS ─────────────────────────────────
+function openBookmarks() {
+  const bms = BM.getAll();
+  const body = document.getElementById('myreports-body');
+  document.getElementById('myreports-overlay').classList.add('open');
+  document.querySelector('#myreports-overlay .sheet-title').textContent = '🔖 সংরক্ষিত সংবাদ';
+  if (!bms.length) { body.innerHTML = `<div class="empty-state"><span class="empty-state-icon">🔖</span><p>কোনো সংরক্ষিত সংবাদ নেই</p></div>`; return; }
+  body.innerHTML = bms.map(b => `
+    <div class="list-card" onclick="openDetail('${esc(b.id)}')">
+      <div class="list-thumb-ph">📰</div>
+      <div class="list-body">
+        <div class="list-title">${esc(b.title)}</div>
+        <div class="card-meta"><span class="chip">⏱ ${timeAgo(Math.floor(b.ts/1000))}</span></div>
+      </div>
+    </div>`).join('');
+}
+
+// ── ADMIN ─────────────────────────────────────
+let _adminTab = 'stats', _adminPage = 0;
+
+async function openAdmin() {
+  document.getElementById('admin-overlay').classList.add('open');
+  loadAdminTab('stats');
+}
+
+function closeAdmin(e) { if (e.target.id === 'admin-overlay') closeOverlay('admin-overlay'); }
+
+function switchAdminTab(tab) {
+  _adminTab = tab; _adminPage = 0;
+  ['stats', 'news', 'users'].forEach(t => {
+    document.getElementById(`adm-tab-${t}`).classList.toggle('active', t === tab);
+  });
+  loadAdminTab(tab);
+}
+
+async function loadAdminTab(tab) {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = '<div class="spinner"></div>';
+  try {
+    if (tab === 'stats') {
+      const data = await api('/api/admin/stats');
+      el.innerHTML = `<div class="stat-grid">
+        <div class="stat-card"><div class="stat-num">${data.news_count}</div><div class="stat-label">সংবাদ</div></div>
+        <div class="stat-card"><div class="stat-num">${data.user_count}</div><div class="stat-label">ব্যবহারকারী</div></div>
+        <div class="stat-card"><div class="stat-num">${data.vote_count}</div><div class="stat-label">ভোট</div></div>
+        <div class="stat-card"><div class="stat-num">${data.banned_count}</div><div class="stat-label">নিষিদ্ধ</div></div>
+      </div>
+      <div class="coord-section">Version: ${esc(data.version || '1.0.0')}</div>`;
+    } else if (tab === 'news') {
+      const data = await api(`/api/admin/news?page=${_adminPage}&limit=20`);
+      let html = '';
+      (data.news || []).forEach(n => {
+        html += `<div class="admin-row">
+          <div class="admin-row-info">
+            <div class="admin-row-title">${esc(n.title)}</div>
+            <div class="admin-row-sub">${esc(n.username)} · ${timeAgo(n.created_at)}</div>
+          </div>
+          <button class="small-btn" onclick="openDetail('${esc(n.id)}')">보기</button>
+          <button class="small-btn danger" onclick="adminDeleteNews('${esc(n.id)}')">🗑️</button>
+        </div>`;
+      });
+      html += `<div class="pagination">
+        ${_adminPage > 0 ? `<button class="page-btn" onclick="_adminPage--;loadAdminTab('news')">← আগে</button>` : ''}
+        <span class="page-btn active">${_adminPage + 1}</span>
+        ${(data.total > (_adminPage + 1) * 20) ? `<button class="page-btn" onclick="_adminPage++;loadAdminTab('news')">পরে →</button>` : ''}
+      </div>`;
+      el.innerHTML = html;
+    } else if (tab === 'users') {
+      const users = await api('/api/admin/users');
+      el.innerHTML = users.map(u => `
+        <div class="admin-row">
+          <div class="admin-row-info">
+            <div class="admin-row-title">${esc(u.username)}</div>
+            <div class="admin-row-sub">${esc(u.phone)} · ${u.banned ? '🚫 নিষিদ্ধ' : '✅ সক্রিয়'}</div>
+          </div>
+          <button class="small-btn ${u.banned ? 'warn' : 'danger'}" onclick="adminToggleBan(${u.id},${!u.banned})">${u.banned ? 'আনব্যান' : 'ব্যান'}</button>
+          <button class="small-btn danger" onclick="adminDeleteUserNews(${u.id})">🗑️ পোস্ট</button>
+        </div>`).join('');
+    }
+  } catch (e) { el.innerHTML = `<p style="color:var(--red);text-align:center">${esc(e.message)}</p>`; }
+}
+
+async function adminDeleteNews(id) {
+  if (!confirm('মুছে ফেলবেন?')) return;
+  try { await api(`/api/admin/news/${id}`, { method: 'DELETE' }); CACHE.invalidate(); loadAdminTab('news'); toast(t('deleted')); }
+  catch (e) { toast(e.message, true); }
+}
+
+async function adminToggleBan(id, ban) {
+  try { await api(`/api/admin/users/${id}/ban`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ban}) }); loadAdminTab('users'); }
+  catch (e) { toast(e.message, true); }
+}
+
+async function adminDeleteUserNews(id) {
+  if (!confirm('এই ব্যবহারকারীর সব পোস্ট মুছবেন?')) return;
+  try { const r = await api(`/api/admin/users/${id}/news`, { method: 'DELETE' }); CACHE.invalidate(); toast(`🗑️ ${r.deleted} পোস্ট মুছে ফেলা হয়েছে`); loadAdminTab('users'); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ── NOTIFICATION BUTTON ───────────────────────
+document.getElementById('notif-btn').onclick = () => switchTab('notif');
+
+// ── INIT ─────────────────────────────────────
+async function init() {
+  initTheme();
+  applyI18n();
+  document.getElementById('lang-btn').textContent = LANG === 'bn' ? 'EN' : 'বাং';
+  renderQuranCard();
+  // Hide loader after short delay
+  setTimeout(() => { document.getElementById('loader').classList.add('hidden'); }, 1200);
+  // Start GPS in background
+  gps().then(() => {});
+  // Load home
+  await loadHome();
+  // Poll notifications if logged in
+  if (S.token) pollNotifications();
+}
+
+init();
