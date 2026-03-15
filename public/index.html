@@ -121,12 +121,9 @@ a{color:var(--accent);text-decoration:none}
 #map-filter{position:absolute;top:10px;right:14px;z-index:400;display:flex;flex-direction:column;gap:5px}
 .mfbtn{background:rgba(8,12,24,0.9);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:10px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap}
 .mfbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.nm-pin{border-radius:4px;border:2.5px solid #fff;box-shadow:0 2px 12px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transition:transform .1s}
-.nm-pin:active{transform:scale(.92)}
-.nm-noimg{font-size:14px}
-.pr{border-color:var(--green)}
-.pf{border-color:var(--red)}
-.pn{border-color:var(--accent)}
+/* nm-cell-img — image overlay filling exact 50×50m geo cell */
+.nm-cell-img{border-radius:4px;cursor:pointer;transition:opacity .2s;}
+.nm-cell-img:hover{opacity:0.85;}
 
 /* ── REPORT MAP ────────────────────────────────────────────── */
 #rmap-wrap{position:relative;flex-shrink:0}
