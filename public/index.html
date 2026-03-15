@@ -266,6 +266,15 @@ a{color:var(--accent);text-decoration:none}
 .tbb[data-tab="report"] .tbi svg{stroke:#fff;width:20px;height:20px}
 .tbb-notif-dot{width:7px;height:7px;border-radius:50%;background:var(--red);position:absolute;top:10px;right:calc(50% - 18px);display:none}
 
+/* ── MAP FULLSCREEN ─────────────────────────────────────────── */
+#screen-map.fs .shead{display:none}
+#screen-map.fs #map-wrap{position:fixed;inset:0;z-index:900;height:100dvh}
+#screen-map.fs #map{position:absolute;inset:0}
+#screen-map.fs #map-filter{top:10px}
+#screen-map.fs #map-fab{top:10px}
+#screen-map.fs #map-info{top:10px}
+#map-fs-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
 /* ── DESKTOP ────────────────────────────────────────────────── */
 @media(min-width:900px){
   #tabbar{display:none!important}
@@ -365,6 +374,7 @@ a{color:var(--accent);text-decoration:none}
     <div class="brand"><div><div class="bname" data-i18n="map">মানচিত্র</div><div class="bsub">৫০মি×৫০মি গ্রিড</div></div></div>
     <div class="head-actions">
       <button class="icon-btn" id="map-refresh-btn" onclick="forceMapRefresh()" title="Refresh">🔄</button>
+      <button class="icon-btn" id="map-fs-btn" onclick="toggleMapFullscreen()" title="Fullscreen">⛶</button>
     </div>
   </div>
   <div id="map-wrap">
