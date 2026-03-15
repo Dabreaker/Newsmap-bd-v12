@@ -1,7 +1,6 @@
-# .gitignore
-.env
-credentials.json
 node_modules/
 newsmap.db
 news_data/
 logs/
+.env
+*.log

@@ -29,11 +29,10 @@ function dbRun(sql, p=[]) { _DB.run(sql,p); persistDB(); }
 async function initDB() {
   // On Vercel: no local filesystem access — fetch WASM from CDN
   // On Termux/local: use bundled WASM from node_modules
-  const IS_VERCEL = !!process.env.VERCEL;
+  // Always use local bundled WASM — never fetch from CDN.
+  // On Vercel, ncc bundles node_modules/sql.js/dist/** via includeFiles in vercel.json.
   const SQL = await initSqlJs({
-    locateFile: file => IS_VERCEL
-      ? `https://sql.js.org/dist/${file}`
-      : require('path').join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+    locateFile: file => require('path').join(__dirname, 'node_modules', 'sql.js', 'dist', file)
   });
   _DB = fs.existsSync(DB_FILE)
     ? new SQL.Database(fs.readFileSync(DB_FILE))
