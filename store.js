@@ -1,84 +1,201 @@
-// store.js — Vercel KV data layer
-// Key schema:
-//   user:phone:{phone}        → user id (string)
-//   user:{id}                 → full user object (JSON)
-//   user:count                → integer counter
-//   news:{id}                 → full news object (JSON) with embedded votes map
-//   cell:{cell_key}           → news id (string) — cell occupancy index
-//   region:{gi}:{gj}          → Set of news ids in that geo-tile
-//   owner:{user_id}           → Set of news ids by this user
-//   notif:{user_id}           → List of notification objects (JSON, capped at 50)
-
-// A "geo-tile" groups cells into ~50km² buckets for region queries.
-// REGION_TILE = 0.45 degrees (~50km). One tile covers ~2500 cells.
-// On GET /api/region we read exactly the 4 surrounding tiles = 4 KV gets.
+// store.js — Vercel Blob-only storage
+// Layout:
+//   db/users.json        → { [id]: userObj, _phone: { [phone]: id }, _count: N }
+//   db/news/{id}.json    → newsObj (with embedded votes)
+//   db/cells.json        → { [cell_key]: news_id }  (active cell index)
+//   db/owner/{uid}.json  → [news_id, ...]
+//   db/notif/{uid}.json  → [notifObj, ...]  (capped 50)
+//   db/stats.json        → { news_count, vote_count }
 
 'use strict';
 
-const { kv } = require('@vercel/kv');
+const { put, head, del, list } = require('@vercel/blob');
 
-// ── TILE HELPERS ─────────────────────────────
-const TILE = 0.45;
-function tileKey(lat, lon) {
-  return `region:${Math.floor(lat / TILE)}:${Math.floor(lon / TILE)}`;
-}
-function surroundingTiles(lat, lon) {
-  const keys = new Set();
-  for (let dlat = -TILE; dlat <= TILE; dlat += TILE) {
-    for (let dlon = -TILE; dlon <= TILE; dlon += TILE) {
-      keys.add(tileKey(lat + dlat, lon + dlon));
-    }
-  }
-  return [...keys];
+const BASE = 'db';
+const TOKEN = () => process.env.BLOB_READ_WRITE_TOKEN;
+
+// ── LOW-LEVEL ─────────────────────────────────
+async function readJSON(path) {
+  try {
+    const url = await getUrl(path);
+    if (!url) return null;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return res.json();
+  } catch { return null; }
 }
 
-// ── USER ──────────────────────────────────────
+async function writeJSON(path, data) {
+  const body = JSON.stringify(data);
+  await put(`${BASE}/${path}`, body, {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+    token: TOKEN()
+  });
+}
+
+// Cache blob URLs per process lifetime (warm lambdas reuse this)
+const _urlCache = {};
+async function getUrl(path) {
+  const key = `${BASE}/${path}`;
+  if (_urlCache[key]) return _urlCache[key];
+  try {
+    const info = await head(key, { token: TOKEN() });
+    _urlCache[key] = info.url;
+    return info.url;
+  } catch { return null; }
+}
+
+function bustUrl(path) {
+  delete _urlCache[`${BASE}/${path}`];
+}
+
+// ── USERS ─────────────────────────────────────
+async function getUsers() {
+  return (await readJSON('users.json')) || { _phone: {}, _count: 0 };
+}
+
+async function saveUsers(data) {
+  bustUrl('users.json');
+  await writeJSON('users.json', data);
+}
+
 async function getUserByPhone(phone) {
-  const id = await kv.get(`user:phone:${phone}`);
+  const data = await getUsers();
+  const id = data._phone[phone];
   if (!id) return null;
-  return kv.get(`user:${id}`);
+  return data[id] || null;
 }
 
 async function getUserById(id) {
-  return kv.get(`user:${id}`);
+  const data = await getUsers();
+  return data[id] || null;
 }
 
 async function createUser(userData) {
-  // Atomic-ish: increment counter, store user + phone index
-  const id = await kv.incr('user:count');
+  const data = await getUsers();
+  data._count = (data._count || 0) + 1;
+  const id = data._count;
   const user = { ...userData, id };
-  await Promise.all([
-    kv.set(`user:${id}`, user),
-    kv.set(`user:phone:${userData.phone}`, id)
-  ]);
+  data[id] = user;
+  data._phone[userData.phone] = id;
+  await saveUsers(data);
   return user;
 }
 
 async function updateUser(id, patch) {
-  const user = await getUserById(id);
-  if (!user) return null;
-  const updated = { ...user, ...patch };
-  await kv.set(`user:${id}`, updated);
-  return updated;
+  const data = await getUsers();
+  if (!data[id]) return null;
+  data[id] = { ...data[id], ...patch };
+  await saveUsers(data);
+  return data[id];
 }
 
 async function getAllUsers(limit = 200) {
-  const count = (await kv.get('user:count')) || 0;
-  const ids = Array.from({ length: Math.min(count, limit) }, (_, i) => `user:${count - i}`);
-  if (!ids.length) return [];
-  const users = await kv.mget(...ids);
-  return users.filter(Boolean);
+  const data = await getUsers();
+  return Object.values(data)
+    .filter(v => v && typeof v === 'object' && v.id)
+    .sort((a, b) => b.created_at - a.created_at)
+    .slice(0, limit);
 }
 
 // ── NEWS ──────────────────────────────────────
-// News object shape stored in KV:
-// { id, owner_id, username, title, description, lat, lon, cell_key,
-//   links, images, thumb, created_at,
-//   votes: { [user_id]: { type, weight, voted_at } }   ← embedded!
-// }
-// Embedding votes eliminates a separate votes collection entirely.
-// real_score / fake_score are computed on read, never stored.
+async function getNews(id) {
+  return readJSON(`news/${id}.json`);
+}
 
+async function createNews(newsData) {
+  const news = { ...newsData, votes: {} };
+  bustUrl(`news/${news.id}.json`);
+  await writeJSON(`news/${news.id}.json`, news);
+  // Update cell index
+  await updateCells(cells => { cells[news.cell_key] = news.id; return cells; });
+  // Update owner index
+  await updateOwnerIndex(news.owner_id, ids => {
+    if (!ids.includes(news.id)) ids.unshift(news.id);
+    return ids.slice(0, 200);
+  });
+  return news;
+}
+
+async function deleteNews(id, news) {
+  bustUrl(`news/${id}.json`);
+  await Promise.all([
+    del(`${BASE}/news/${id}.json`, { token: TOKEN() }).catch(() => {}),
+    updateCells(cells => { delete cells[news.cell_key]; return cells; }),
+    updateOwnerIndex(news.owner_id, ids => ids.filter(i => i !== id))
+  ]);
+}
+
+async function getRegionNews(lat, lon) {
+  // List all news blobs in db/news/ prefix and fetch non-expired ones
+  // This is the main query — Blob list is paginated but fast for <1000 files
+  const cutoff = nowSec() - 36 * 3600;
+  const dlat = 0.09, dlon = 0.10;
+
+  const { blobs } = await list({ prefix: `${BASE}/news/`, token: TOKEN() });
+  if (!blobs.length) return [];
+
+  // Batch fetch all news in parallel (Blob CDN is fast)
+  const items = await Promise.all(
+    blobs.map(b => fetch(b.url, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null))
+  );
+
+  return items.filter(n =>
+    n &&
+    n.created_at > cutoff &&
+    Math.abs(n.lat - lat) <= dlat &&
+    Math.abs(n.lon - lon) <= dlon
+  );
+}
+
+async function getOwnerNews(userId) {
+  const ids = await readJSON(`owner/${userId}.json`) || [];
+  const cutoff = nowSec() - 36 * 3600;
+  const items = await Promise.all(ids.map(id => getNews(id)));
+  return items.filter(n => n && n.created_at > cutoff).sort((a, b) => b.created_at - a.created_at);
+}
+
+// ── CELLS ─────────────────────────────────────
+async function getCellOccupant(cellKey) {
+  const cells = await readJSON('cells.json') || {};
+  const newsId = cells[cellKey];
+  if (!newsId) return null;
+  // Verify news still exists and not expired
+  const news = await getNews(newsId);
+  if (!news || news.created_at <= nowSec() - 36 * 3600) {
+    // Stale entry — clean it up
+    await updateCells(c => { delete c[cellKey]; return c; });
+    return null;
+  }
+  return newsId;
+}
+
+async function updateCells(fn) {
+  bustUrl('cells.json');
+  const cells = (await readJSON('cells.json')) || {};
+  await writeJSON('cells.json', fn(cells));
+}
+
+async function updateOwnerIndex(userId, fn) {
+  bustUrl(`owner/${userId}.json`);
+  const ids = (await readJSON(`owner/${userId}.json`)) || [];
+  await writeJSON(`owner/${userId}.json`, fn(ids));
+}
+
+// ── VOTES (embedded in news doc) ─────────────
+async function upsertVote(newsId, userId, type, weight) {
+  const news = await getNews(newsId);
+  if (!news) return null;
+  news.votes = news.votes || {};
+  news.votes[String(userId)] = { type, weight, voted_at: nowSec() };
+  bustUrl(`news/${newsId}.json`);
+  await writeJSON(`news/${newsId}.json`, news);
+  return { type, weight };
+}
+
+// ── SCORES ────────────────────────────────────
 function computeScores(news) {
   const votes = news.votes || {};
   let real_score = 0, fake_score = 0, vote_count = 0;
@@ -95,130 +212,56 @@ function enrichNews(news, myUserId = null) {
   const scores = computeScores(news);
   return {
     ...news,
-    votes: undefined,   // strip embedded votes from response
+    votes: undefined,
     ...scores,
     expires_at: news.created_at + 36 * 3600,
-    _myVote: myUserId && news.votes?.[myUserId]?.type || null
+    _myVote: myUserId && news.votes?.[String(myUserId)]?.type || null
   };
 }
 
-async function getNews(id) {
-  return kv.get(`news:${id}`);
-}
-
-async function getManyNews(ids) {
-  if (!ids.length) return [];
-  const keys = ids.map(id => `news:${id}`);
-  const results = await kv.mget(...keys);
-  return results.filter(Boolean);
-}
-
-async function createNews(newsData) {
-  const news = { ...newsData, votes: {} };
-  const tile = tileKey(news.lat, news.lon);
-  const ttl = 36 * 3600 + 300; // 36h + 5min buffer
-
-  await Promise.all([
-    kv.set(`news:${news.id}`, news, { ex: ttl }),
-    kv.set(`cell:${news.cell_key}`, news.id, { ex: ttl }),
-    kv.sadd(tile, news.id),
-    kv.sadd(`owner:${news.owner_id}`, news.id)
-  ]);
-  // Set tile TTL to max 48h (tiles outlive individual news)
-  await kv.expire(tile, 48 * 3600);
-  return news;
-}
-
-async function deleteNews(newsId, news) {
-  // news object passed in to avoid extra get
-  const tile = tileKey(news.lat, news.lon);
-  await Promise.all([
-    kv.del(`news:${newsId}`),
-    kv.del(`cell:${news.cell_key}`),
-    kv.srem(tile, newsId),
-    kv.srem(`owner:${news.owner_id}`, newsId)
-  ]);
-}
-
-async function getCellOccupant(cellKey) {
-  return kv.get(`cell:${cellKey}`);
-}
-
-async function getRegionNews(lat, lon) {
-  const tiles = surroundingTiles(lat, lon);
-  // Batch: one SMEMBERS per tile (4 total)
-  const sets = await Promise.all(tiles.map(t => kv.smembers(t)));
-  const allIds = [...new Set(sets.flat().filter(Boolean))];
-  if (!allIds.length) return [];
-  const items = await getManyNews(allIds);
-  const cutoff = nowSec() - 36 * 3600;
-  return items.filter(n => n && n.created_at > cutoff);
-}
-
-async function getOwnerNews(userId) {
-  const ids = await kv.smembers(`owner:${userId}`);
-  if (!ids.length) return [];
-  const items = await getManyNews(ids);
-  const cutoff = nowSec() - 36 * 3600;
-  return items.filter(n => n && n.created_at > cutoff).sort((a, b) => b.created_at - a.created_at);
-}
-
-// ── VOTES (embedded in news) ──────────────────
-async function upsertVote(newsId, userId, type, weight) {
-  const news = await getNews(newsId);
-  if (!news) return null;
-  news.votes = news.votes || {};
-  news.votes[userId] = { type, weight, voted_at: nowSec() };
-  const ttlLeft = (news.created_at + 36 * 3600) - nowSec();
-  if (ttlLeft > 0) await kv.set(`news:${newsId}`, news, { ex: ttlLeft + 300 });
-  return { type, weight };
-}
-
 // ── NOTIFICATIONS ─────────────────────────────
-// Stored as a single JSON list per user (capped at 50, prepend new)
 async function getNotifications(userId) {
-  const data = await kv.get(`notif:${userId}`);
-  return data || [];
+  return (await readJSON(`notif/${userId}.json`)) || [];
 }
 
 async function addNotification(userId, notif) {
+  bustUrl(`notif/${userId}.json`);
   const existing = await getNotifications(userId);
-  const updated = [notif, ...existing].slice(0, 50);
-  await kv.set(`notif:${userId}`, updated, { ex: 7 * 24 * 3600 }); // 7 day TTL
+  await writeJSON(`notif/${userId}.json`, [notif, ...existing].slice(0, 50));
 }
 
 async function markNotificationsSeen(userId) {
+  bustUrl(`notif/${userId}.json`);
   const notifs = await getNotifications(userId);
-  const updated = notifs.map(n => ({ ...n, seen: true }));
-  await kv.set(`notif:${userId}`, updated, { ex: 7 * 24 * 3600 });
+  await writeJSON(`notif/${userId}.json`, notifs.map(n => ({ ...n, seen: true })));
 }
 
-// ── UTILS ─────────────────────────────────────
-function nowSec() { return Math.floor(Date.now() / 1000); }
-
-// ── ADMIN STATS ───────────────────────────────
+// ── STATS ─────────────────────────────────────
 async function getStats() {
-  const user_count = (await kv.get('user:count')) || 0;
-  // Scan tiles for live news (approximation — full scan not practical in Redis)
-  // Instead return a stored counter we maintain
-  const news_count = (await kv.get('stats:news_count')) || 0;
-  const vote_count = (await kv.get('stats:vote_count')) || 0;
-  return { user_count, news_count, vote_count };
+  return (await readJSON('stats.json')) || { news_count: 0, vote_count: 0 };
 }
 
 async function incrStat(key, by = 1) {
-  await kv.incrby(`stats:${key}`, by);
+  bustUrl('stats.json');
+  const stats = await getStats();
+  stats[key] = (stats[key] || 0) + by;
+  await writeJSON('stats.json', stats);
 }
+
 async function decrStat(key, by = 1) {
-  await kv.decrby(`stats:${key}`, by);
+  bustUrl('stats.json');
+  const stats = await getStats();
+  stats[key] = Math.max(0, (stats[key] || 0) - by);
+  await writeJSON('stats.json', stats);
 }
+
+function nowSec() { return Math.floor(Date.now() / 1000); }
 
 module.exports = {
   getUserByPhone, getUserById, createUser, updateUser, getAllUsers,
-  getNews, getManyNews, createNews, deleteNews, getCellOccupant,
-  getRegionNews, getOwnerNews, enrichNews,
-  upsertVote,
+  getNews, createNews, deleteNews, getCellOccupant, getRegionNews, getOwnerNews,
+  upsertVote, computeScores, enrichNews,
   getNotifications, addNotification, markNotificationsSeen,
   getStats, incrStat, decrStat,
-  tileKey, surroundingTiles, computeScores, nowSec
+  nowSec
 };

@@ -1,4 +1,4 @@
-// server.js — জনবার্তা API (Vercel KV + Blob, no MongoDB)
+// server.js — জনবার্তা API (Vercel Blob only — no KV, no Redis, no MongoDB)
 'use strict';
 
 const express  = require('express');
@@ -59,11 +59,11 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function maskPhone(p) { if (!p || p.length < 8) return p; return p.slice(0,4)+'****'+p.slice(-2); }
 const nowSec = store.nowSec;
 
-// ── BLOB IMAGE UPLOAD ─────────────────────────
+// ── IMAGE UPLOAD ──────────────────────────────
 async function uploadImages(files, newsId) {
   if (!files || !files.length) return [];
   const results = await Promise.all(files.map((f, i) =>
-    put(`news/${newsId}/${i}.${f.mimetype.split('/')[1]}`, f.buffer, {
+    put(`images/${newsId}/${i}.${f.mimetype.split('/')[1]}`, f.buffer, {
       access: 'public', contentType: f.mimetype, addRandomSuffix: false
     })
   ));
@@ -86,7 +86,7 @@ app.get('/api/status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── REGISTER — 2 KV writes ────────────────────
+// ── REGISTER ──────────────────────────────────
 app.post('/api/register', async (req, res) => {
   try {
     const { phone: rawPhone, password } = req.body;
@@ -109,7 +109,7 @@ app.post('/api/register', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── LOGIN — 2 KV reads ────────────────────────
+// ── LOGIN ─────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   try {
     const { phone: rawPhone, password } = req.body;
@@ -130,7 +130,7 @@ app.post('/api/login', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── POST NEWS — ~6 KV ops ─────────────────────
+// ── POST NEWS ─────────────────────────────────
 app.post('/api/news', authMiddleware, upload.array('images', 10), async (req, res) => {
   try {
     const { title, description, lat: rawLat, lon: rawLon, links, user_lat, user_lon } = req.body;
@@ -163,7 +163,7 @@ app.post('/api/news', authMiddleware, upload.array('images', 10), async (req, re
     });
     await store.incrStat('news_count');
 
-    // Notifications (best-effort, non-blocking)
+    // Notifications (non-blocking)
     store.getRegionNews(cell.lat, cell.lon).then(regionNews => {
       const ownerSet = [...new Set(regionNews.filter(n => n.owner_id !== req.user.id).map(n => n.owner_id))];
       return Promise.all(ownerSet.map(oid => {
@@ -180,7 +180,7 @@ app.post('/api/news', authMiddleware, upload.array('images', 10), async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── GET REGION — 5 KV ops (4 tile SMEMBERS + 1 MGET) ──
+// ── GET REGION ────────────────────────────────
 app.get('/api/region', async (req, res) => {
   try {
     const lat = parseFloat(req.query.lat) || 23.8103;
@@ -197,7 +197,7 @@ app.get('/api/region', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── NEARBY — same 5 KV ops ────────────────────
+// ── NEARBY ────────────────────────────────────
 app.get('/api/news/nearby', async (req, res) => {
   try {
     const lat = parseFloat(req.query.lat), lon = parseFloat(req.query.lon);
@@ -206,7 +206,7 @@ app.get('/api/news/nearby', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── GET SINGLE NEWS — 1 KV get ────────────────
+// ── GET SINGLE NEWS ───────────────────────────
 app.get('/api/news/:id', optionalAuth, async (req, res) => {
   try {
     const raw = await store.getNews(req.params.id);
@@ -216,7 +216,7 @@ app.get('/api/news/:id', optionalAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── DELETE NEWS — 1 GET + 4 DEL/SREM ─────────
+// ── DELETE NEWS ───────────────────────────────
 app.delete('/api/news/:id', authMiddleware, async (req, res) => {
   try {
     const news = await store.getNews(req.params.id);
@@ -230,7 +230,7 @@ app.delete('/api/news/:id', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── VOTE — 1 GET + 1 SET ──────────────────────
+// ── VOTE ──────────────────────────────────────
 app.post('/api/vote', authMiddleware, async (req, res) => {
   try {
     const { news_id, type, user_lat, user_lon } = req.body;
@@ -241,14 +241,14 @@ app.post('/api/vote', authMiddleware, async (req, res) => {
     const dist = (!isNaN(uLat) && !isNaN(uLon)) ? hav(uLat, uLon, news.lat, news.lon) : 999;
     if (dist > 5) return res.status(403).json({ error: 'Must be within 5km to vote' });
     const weight = voteWeight(dist);
-    const isNewVote = !news.votes?.[req.user.id];
+    const isNewVote = !news.votes?.[String(req.user.id)];
     await store.upsertVote(news_id, req.user.id, type, weight);
     if (isNewVote) await store.incrStat('vote_count');
     res.json({ ok: true, type, weight });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── MY NEWS — 2 KV ops ────────────────────────
+// ── MY NEWS ───────────────────────────────────
 app.get('/api/my/news', authMiddleware, async (req, res) => {
   try {
     const rows = await store.getOwnerNews(req.user.id);
@@ -256,7 +256,7 @@ app.get('/api/my/news', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── NOTIFICATIONS — 1 KV get ──────────────────
+// ── NOTIFICATIONS ─────────────────────────────
 app.get('/api/notifications', authMiddleware, async (req, res) => {
   try {
     const notifications = await store.getNotifications(req.user.id);
@@ -271,10 +271,30 @@ app.post('/api/notifications/seen', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── REAPER — KV TTLs handle expiry automatically ──
+// ── REAPER — clean up expired news blobs ──────
 app.get('/api/reaper', async (req, res) => {
-  if (req.query.secret !== process.env.JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
-  res.json({ ok: true, note: 'KV TTLs auto-expire news keys. No manual purge needed.' });
+  try {
+    if (req.query.secret !== process.env.JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
+    const { list: blobList } = require('@vercel/blob');
+    const cutoff = nowSec() - 36 * 3600;
+    const { blobs } = await blobList({ prefix: 'db/news/', token: process.env.BLOB_READ_WRITE_TOKEN });
+    let purged = 0;
+    await Promise.all(blobs.map(async b => {
+      try {
+        const res2 = await fetch(b.url, { cache: 'no-store' });
+        if (!res2.ok) return;
+        const news = await res2.json();
+        if (news.created_at <= cutoff) {
+          await Promise.all([
+            blobDel(b.url),
+            deleteImages(news.images || [])
+          ]);
+          purged++;
+        }
+      } catch {}
+    }));
+    res.json({ ok: true, purged });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ══════════════════════════════════════════════
@@ -301,9 +321,8 @@ app.get('/api/admin/news', authMiddleware, adminOnly, async (req, res) => {
     const q = (req.query.q || '').toLowerCase();
     let rows = await store.getRegionNews(lat, lon);
     if (q) rows = rows.filter(n => n.title?.toLowerCase().includes(q));
-    rows.sort((a,b) => b.created_at - a.created_at);
-    const news = rows.slice(page * limit, (page+1) * limit).map(n => store.enrichNews(n));
-    res.json({ news, total: rows.length, page, limit });
+    rows.sort((a, b) => b.created_at - a.created_at);
+    res.json({ news: rows.slice(page*limit,(page+1)*limit).map(n => store.enrichNews(n)), total: rows.length, page, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
