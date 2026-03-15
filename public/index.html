@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>BD News Map v11</title>
+<title>BD News Map v15</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 /* ── THEME VARS ────────────────────────────────────────────── */
@@ -114,6 +114,10 @@ a{color:var(--accent);text-decoration:none}
 #map{position:absolute;inset:0;background:var(--bg)}
 #map-info{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(8,12,24,0.9);color:var(--text);padding:5px 13px;border-radius:17px;font-size:11px;font-weight:600;border:1px solid var(--border);z-index:400;pointer-events:none;white-space:nowrap}
 #map-fab{position:absolute;bottom:18px;right:14px;z-index:500;width:44px;height:44px;border-radius:50%;background:var(--accent);box-shadow:0 4px 16px rgba(76,123,255,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px}
+#map-card-panel{position:absolute;bottom:0;left:0;right:0;z-index:600;background:var(--bg2);border-radius:22px 22px 0 0;border-top:1px solid var(--border);max-height:65dvh;overflow-y:auto;transform:translateY(100%);transition:transform .3s cubic-bezier(.2,.8,.4,1);pointer-events:none}
+#map-card-panel.open{transform:translateY(0);pointer-events:all}
+#map-card-handle{width:36px;height:4px;background:var(--border);border-radius:4px;margin:10px auto 0;cursor:pointer}
+#map-card-content{padding:4px 16px 28px}
 #map-filter{position:absolute;top:10px;right:14px;z-index:400;display:flex;flex-direction:column;gap:5px}
 .mfbtn{background:rgba(8,12,24,0.9);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:10px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap}
 .mfbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -311,10 +315,10 @@ a{color:var(--accent);text-decoration:none}
 <nav id="desktop-nav" style="display:none">
   <div style="display:flex;align-items:center;gap:9px;padding:0 4px 18px;border-bottom:1px solid var(--border);margin-bottom:12px">
     <img src="/logo.png" style="width:32px;height:32px;border-radius:8px;object-fit:cover" onerror="this.style.display='none'" alt="">
-    <div><div class="dn-appname">BD News Map v11</div><div class="dn-tagline" id="tagline-dn">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
+    <div><div class="dn-appname">BD News Map v15</div><div class="dn-tagline" id="tagline-dn">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
   </div>
   <button class="dn-btn active" data-tab="home" onclick="switchTab('home')">
-    <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span data-i18n="home">হোম</span>
+    <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v15a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span data-i18n="home">হোম</span>
   </button>
   <button class="dn-btn" data-tab="map" onclick="switchTab('map')">
     <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg><span data-i18n="map">মানচিত্র</span>
@@ -344,7 +348,7 @@ a{color:var(--accent);text-decoration:none}
     <div class="brand">
       <img src="/logo.png" class="logo-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="logo-fb">BD</div>
-      <div><div class="bname">BD News Map v11</div><div class="bsub" id="tagline-hd" data-i18n-sub="tagline">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
+      <div><div class="bname">BD News Map v15</div><div class="bsub" id="tagline-hd" data-i18n-sub="tagline">সত্য সংবাদ · সত্যিকার মানুষ</div></div>
     </div>
     <div class="head-actions">
       <div id="home-badge" class="hbadge bneu" onclick="switchTab('map')"></div>
@@ -361,7 +365,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- MAP -->
 <div id="screen-map" class="screen">
   <div class="shead">
-    <div class="brand"><div><div class="bname" data-i18n="map">মানচিত্র</div><div class="bsub">১০কিমি×১০কিমি · ৪০০মি এলাকা</div></div></div>
+    <div class="brand"><div><div class="bname" data-i18n="map">মানচিত্র</div><div class="bsub">৫০মি×৫০মি গ্রিড</div></div></div>
     <div class="head-actions">
       <button class="icon-btn" id="map-refresh-btn" onclick="forceMapRefresh()" title="Refresh">🔄</button>
     </div>
@@ -375,6 +379,11 @@ a{color:var(--accent);text-decoration:none}
       <button class="mfbtn" id="mf-fake" onclick="setMapFilter('fake')">✗ মিথ্যা</button>
     </div>
     <button id="map-fab" onclick="locateMe()">⊕</button>
+    <!-- Map card overlay — slides up over the map -->
+    <div id="map-card-panel">
+      <div id="map-card-handle" onclick="closeMapCard()"></div>
+      <div id="map-card-content"></div>
+    </div>
   </div>
 </div>
 
@@ -428,7 +437,7 @@ a{color:var(--accent);text-decoration:none}
 
 <!-- ADMIN -->
 <div id="screen-admin" class="screen">
-  <div class="shead"><div class="brand"><div><div class="bname">⚙️ অ্যাডমিন প্যানেল</div><div class="bsub">BD News Map v11</div></div></div></div>
+  <div class="shead"><div class="brand"><div><div class="bname">⚙️ অ্যাডমিন প্যানেল</div><div class="bsub">BD News Map v15</div></div></div></div>
   <div id="admin-content" style="padding:12px 16px"><div class="sp-box"><b></b><b></b><b></b></div></div>
 </div>
 
@@ -440,16 +449,18 @@ a{color:var(--accent);text-decoration:none}
   <div id="auth-sheet">
     <div class="sh-handle"></div>
     <div class="sh-icon">🕌</div>
-    <div class="sh-title">BD News Map v11</div>
-    <div class="sh-sub" data-i18n="login_sub">সংবাদ রিপোর্ট করতে লগইন করুন</div>
+    <div class="sh-title">BD News Map v15</div>
+    <div class="sh-sub" id="auth-mode-sub">লগইন করুন</div>
     <form id="auth-form" action="javascript:void(0)" autocomplete="on" onsubmit="doAuth(event)">
-      <div style="margin-bottom:11px"><div class="flabel" data-i18n="phone">ফোন নম্বর</div>
+      <div style="margin-bottom:11px"><div class="flabel">ফোন নম্বর</div>
         <input class="fi" id="a-phone" name="tel" type="tel" autocomplete="tel" inputmode="numeric" placeholder="01XXXXXXXXX" required></div>
-      <div style="margin-bottom:14px"><div class="flabel" data-i18n="password">পাসওয়ার্ড</div>
-        <input class="fi" id="a-pass" name="password" type="password" autocomplete="current-password" placeholder="পাসওয়ার্ড লিখুন" required minlength="6"></div>
-      <button type="submit" class="btn-p" id="auth-btn" data-i18n="enter">প্রবেশ করুন</button>
+      <div style="margin-bottom:14px"><div class="flabel">পাসওয়ার্ড</div>
+        <input class="fi" id="a-pass" name="password" type="password" autocomplete="current-password" placeholder="কমপক্ষে ৬ অক্ষর" required minlength="6"></div>
+      <button type="submit" class="btn-p" id="auth-btn">প্রবেশ করুন</button>
     </form>
-    <div class="auth-hint" data-i18n="auth_hint">শুধুমাত্র অনুমোদিত সদস্যরা প্রবেশ করতে পারবেন</div>
+    <div class="auth-hint" id="auth-toggle-text">
+      নতুন ব্যবহারকারী? <a href="javascript:void(0)" onclick="_setAuthMode('register')" style="color:var(--accent);font-weight:700">নিবন্ধন করুন</a>
+    </div>
   </div>
 </div>
 
@@ -458,7 +469,7 @@ a{color:var(--accent);text-decoration:none}
 
 <nav id="tabbar">
   <button class="tbb active" data-tab="home" onclick="switchTab('home')">
-    <div class="tbi"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <div class="tbi"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v15a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
     <span data-i18n="home">হোম</span>
   </button>
   <button class="tbb" data-tab="map" onclick="switchTab('map')">
