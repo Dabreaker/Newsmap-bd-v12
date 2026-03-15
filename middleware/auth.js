@@ -1,8 +1,25 @@
-'use strict';
+// middleware/auth.js
 const jwt = require('jsonwebtoken');
-module.exports = function auth(req, res, next) {
-  const h = req.headers.authorization;
-  if (!h || !h.startsWith('Bearer ')) return res.status(401).json({ error: 'টোকেন নেই' });
-  try { req.user = jwt.verify(h.slice(7), process.env.JWT_SECRET || 'bd-secret'); next(); }
-  catch { res.status(401).json({ error: 'টোকেন মেয়াদোত্তীর্ণ — আবার লগইন করুন' }); }
-};
+
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    try { req.user = jwt.verify(token, process.env.JWT_SECRET); } catch {}
+  }
+  next();
+}
+
+module.exports = { authMiddleware, optionalAuth };
