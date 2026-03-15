@@ -120,7 +120,7 @@ let MAP_FILTER='all'; // all | real | fake
 function setMapFilter(f){
   MAP_FILTER=f;
   ['all','real','fake'].forEach(x=>document.getElementById('mf-'+x)?.classList.toggle('on',x===f));
-  if(MAP)NM._apply(CACHE.markers,MAP.getZoom(),MAP.getCenter().lat);
+  if(MAP)NM._apply(CACHE.markers,MAP.getZoom());
 }
 
 // ── GEOHASH ───────────────────────────────────────────────────
@@ -141,17 +141,7 @@ function snapToCell(lat, lon) {
 
 // ── UTILS ─────────────────────────────────────────────────────
 function hav(la1,lo1,la2,lo2){const R=6371,r=d=>d*Math.PI/180;const a=Math.sin(r(la2-la1)/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(r(lo2-lo1)/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
-const PIN_SIZE=44; // fixed px — same at every zoom level
-function mkPin(cls,thumb){
-  const half=22; // PIN_SIZE/2 — integer, center locked to coordinate
-  const bg=thumb?`background-image:url('${thumb}');background-size:cover;background-position:center;`:'';
-  return L.divIcon({
-    html:`<div class="nm-pin ${cls}" style="width:${PIN_SIZE}px;height:${PIN_SIZE}px;${bg}">${!thumb?'<div class="nm-noimg">📰</div>':''}</div>`,
-    iconSize:[PIN_SIZE,PIN_SIZE],
-    iconAnchor:[half,half],
-    className:'',
-  });
-}
+// mkPin replaced by mkSqPin (fixed square, no zoom scaling)
 function rt(u){const d=Math.floor(Date.now()/1000)-u;if(d<60)return d+t('ago_s');if(d<3600)return Math.floor(d/60)+t('ago_m');if(d<86400)return Math.floor(d/3600)+t('ago_h');return Math.floor(d/86400)+t('ago_d');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function pct(n){const tot=+n.real_score+(+n.fake_score);return tot>0?Math.round((+n.real_score/tot)*100):50;}
@@ -196,11 +186,27 @@ function switchTab(name){
   if(name==='admin')  loadAdmin();
 }
 
-// ── MARKER MANAGER — 50×50m grid blocks ──────────────────────
+// ── MARKER MANAGER — fixed 44px square cards (no zoom scaling) ──
+// Each card is a single divIcon square: same pixel size at every zoom.
+// No L.rectangle — the square border IS the cell indicator.
+const PIN_SQ = 44; // px — fixed, never changes with zoom
+function mkSqPin(col, thumb) {
+  const border = `2.5px solid ${col}`;
+  const bg = thumb
+    ? `background:url('${thumb}') center/cover no-repeat;`
+    : `background:var(--bg3);`;
+  return L.divIcon({
+    html: `<div style="width:${PIN_SQ}px;height:${PIN_SQ}px;border:${border};border-radius:6px;${bg}box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;">${!thumb ? '<span style="font-size:16px">📰</span>' : ''}</div>`,
+    iconSize: [PIN_SQ, PIN_SQ],
+    iconAnchor: [PIN_SQ/2, PIN_SQ/2],
+    className: '',
+  });
+}
+
 const NM={markers:{},_busy:false,
   reset(){
     Object.values(this.markers).forEach(m=>{
-      if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
+      if(MAP && m.layer) MAP.removeLayer(m.layer);
     });
     this.markers={};
   },
@@ -220,34 +226,29 @@ const NM={markers:{},_busy:false,
     });
     filtered.forEach(n=>{
       seen.add(n.id);
-      // lat/lon is already the cell center (snapped on server)
       const clat=+n.lat, clon=+n.lon;
       const diff=(+n.real_score)-(+n.fake_score);
-      const cls=diff>2?'pr':diff<-2?'pf':'pn';
       const col=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
       if(!this.markers[n.id]){
-        // Grid rectangle — exactly 50×50m, drawn from cell bounds
-        const rect=L.rectangle(
-          [[clat-GRID_DLAT/2, clon-GRID_DLON/2],[clat+GRID_DLAT/2, clon+GRID_DLON/2]],
-          {color:col,weight:1.5,opacity:0.8,fillColor:col,fillOpacity:0.12,interactive:true}
-        ).addTo(MAP);
-        rect.on('click',()=>openMapCard(n.id));
-        // Fixed 44px news card centered exactly on cell center
-        const layer=L.marker([clat,clon],{icon:mkPin(cls,n.thumb||''),interactive:true}).addTo(MAP);
+        // Single fixed-pixel square marker — no rectangle, no zoom scaling
+        const layer=L.marker([clat,clon],{
+          icon:mkSqPin(col,n.thumb||''),
+          interactive:true,
+          keyboard:false,
+        }).addTo(MAP);
         layer.on('click',()=>openMapCard(n.id));
-        this.markers[n.id]={layer,rect,cls,thumb:n.thumb||''};
+        this.markers[n.id]={layer,col,thumb:n.thumb||''};
       } else {
         const m=this.markers[n.id];
-        if(cls!==m.cls||m.thumb!==n.thumb){
-          m.layer.setIcon(mkPin(cls,n.thumb||''));
-          m.rect.setStyle({color:col,fillColor:col});
-          m.cls=cls;m.thumb=n.thumb||'';
+        if(col!==m.col||m.thumb!==n.thumb){
+          m.layer.setIcon(mkSqPin(col,n.thumb||''));
+          m.col=col;m.thumb=n.thumb||'';
         }
       }
     });
     Object.entries(this.markers).forEach(([id,m])=>{
       if(!seen.has(id)){
-        if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
+        if(MAP && m.layer) MAP.removeLayer(m.layer);
         delete this.markers[id];
       }
     });
@@ -267,7 +268,7 @@ async function initMap(){
   L.control.zoom({position:'bottomright'}).addTo(MAP);
   requestAnimationFrame(()=>requestAnimationFrame(()=>{MAP.invalidateSize();drawUser(lat,lon);trigLoad();}));
   MAP.on('moveend',()=>{clearTimeout(_mpd);_mpd=setTimeout(trigLoad,400);});
-  MAP.on('zoomend',()=>{clearTimeout(_mpd);_mpd=setTimeout(()=>{if(MAP)NM._apply(CACHE.markers,MAP.getZoom(),MAP.getCenter().lat);},200);});
+  // zoomend: no rect resizing needed — markers are fixed-pixel squares
 }
 function trigLoad(){if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());}
 function forceMapRefresh(){CACHE.invalidate();if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());toast('🔄 Refreshed');}
@@ -491,7 +492,7 @@ function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getEl
 function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'জনবার্তা',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
 function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
 async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openMapCard(nid);else openModal(nid);}
-async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
+async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP&&m.layer)MAP.removeLayer(m.layer);delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
 
 // ── AUTH ──────────────────────────────────────────────────────
 let _authMode='login'; // 'login' | 'register'
