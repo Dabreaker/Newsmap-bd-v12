@@ -1,19 +1,22 @@
 {
-  "name": "bd-news-map-v16",
+  "name": "bd-news-map-v17",
   "version": "1.0.0",
-  "description": "BD News Map v16 — সংবাদ হোক দালাল মুক্ত।",
+  "description": "BD News Map v17 — MongoDB + Vercel Edition",
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev":   "node --watch server.js"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "express": "^4.18.3",
+    "bcryptjs":     "^2.4.3",
+    "express":      "^4.18.3",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.0.1",
-    "ngeohash": "^0.6.3",
-    "node-cron": "^3.0.3",
-    "sql.js": "^1.12.0"
+    "mongodb":      "^6.5.0",
+    "multer":       "^2.0.1",
+    "ngeohash":     "^0.6.3",
+    "node-cron":    "^3.0.3"
   }
 }

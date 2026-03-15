@@ -1,46 +1,65 @@
-# BD-NewsMap
+# BD News Map v17 — MongoDB + Vercel
 
-Hyperlocal news mapping for Bangladesh. Termux-optimized, zero native dependencies.
+## Deploy to Vercel (step by step)
 
-## Quick Start
+### 1. Install Vercel CLI
+```bash
+npm install -g vercel
+```
 
+### 2. Login to Vercel
+```bash
+vercel login
+```
+
+### 3. Go into the project folder
+```bash
+cd bd-news-map-v17
+```
+
+### 4. Deploy
+```bash
+vercel
+```
+Answer the prompts:
+- Set up and deploy? → **Y**
+- Which scope? → pick your account
+- Link to existing project? → **N** (first time)
+- Project name? → `bd-news-map` (or anything)
+- In which directory is your code located? → `.` (just press Enter)
+
+### 5. Set environment variables on Vercel
+After the first deploy, go to:
+**Vercel Dashboard → Your Project → Settings → Environment Variables**
+
+Add these two:
+
+| Name | Value |
+|------|-------|
+| `MONGO_URI` | `mongodb+srv://togoabbalagi:mdmahimislam1234567890@togoabbalagi.dlrktny.mongodb.net/bdnewsmap?retryWrites=true&w=majority&appName=Togoabbalagi` |
+| `JWT_SECRET` | any long random string, e.g. `bd-news-super-secret-2024` |
+
+### 6. Redeploy to apply env vars
+```bash
+vercel --prod
+```
+
+Your app is now live at the URL Vercel gives you.
+
+---
+
+## Local development
 ```bash
 npm install
-node server.js
+npm run dev
 ```
+Uses the `.env` file automatically (Atlas URI already set there).
 
-Open: http://localhost:3000
+---
 
-## Project Structure
-
+## Manual image purge on Vercel (no cron)
+Hit this URL to purge old news (replace SECRET with your JWT_SECRET):
 ```
-bd-newsmap/
-├── server.js          Main Express server
-├── db.js              sql.js database module
-├── .env               Environment variables
-├── middleware/
-│   ├── auth.js        JWT authentication
-│   └── logger.js      Request + file logger
-├── routes/            (reserved for route splitting)
-├── public/
-│   ├── index.html     SPA shell
-│   └── js/app.js      Frontend logic
-├── news_data/         News images (auto-created)
-│   └── <newsId>/
-│       └── img_*.jpg
-├── logs/              Server logs (auto-created)
-│   └── app.log
-└── newsmap.db         SQLite via sql.js WASM
+GET https://your-app.vercel.app/api/reaper?secret=YOUR_JWT_SECRET
 ```
-
-## Dependencies — all pure JS, no native compilation
-
-| Package      | Purpose               |
-|--------------|-----------------------|
-| express      | HTTP server           |
-| sql.js       | SQLite (WASM)         |
-| bcryptjs     | Password hashing      |
-| jsonwebtoken | Auth tokens           |
-| multer       | File uploads          |
-| ngeohash     | Geohash grid          |
-| node-cron    | Reaper scheduler      |
+You can set this up as a free Vercel Cron Job in `vercel.json`.

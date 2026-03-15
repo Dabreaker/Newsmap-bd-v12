@@ -1,118 +1,58 @@
 'use strict';
-const initSqlJs = require('sql.js');
-const fs        = require('fs');
-const path      = require('path');
+const { MongoClient, GridFSBucket, ObjectId } = require('mongodb');
 
-const IS_VERCEL = !!process.env.VERCEL;
-const DATA_ROOT = IS_VERCEL ? '/tmp' : __dirname;
-const DB_FILE   = path.join(DATA_ROOT, 'newsmap.db');
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) throw new Error('MONGO_URI environment variable is not set');
 
-let _DB = null;
+let _client = null;
+let _db     = null;
+let _bucket = null;
 
-function persistDB() {
-  if(!_DB) return;
-  const tmp = DB_FILE+'.tmp';
-  fs.writeFileSync(tmp, Buffer.from(_DB.export()));
-  fs.renameSync(tmp, DB_FILE);
-}
+// ── Collections ───────────────────────────────────────────────
+const col           = name => _db.collection(name);
+const users         = () => col('users');
+const news          = () => col('news');
+const votes         = () => col('votes');
+const notifications = () => col('notifications');
+const bucket        = () => _bucket;
 
-function dbGet(sql, p=[]) {
-  const s=_DB.prepare(sql); s.bind(p);
-  const row=s.step()?s.getAsObject():null; s.free(); return row;
-}
-function dbAll(sql, p=[]) {
-  const rows=[],s=_DB.prepare(sql); s.bind(p);
-  while(s.step()) rows.push(s.getAsObject()); s.free(); return rows;
-}
-function dbRun(sql, p=[]) { _DB.run(sql,p); persistDB(); }
-
+// ── Connect + indexes ─────────────────────────────────────────
 async function initDB() {
-  // On Vercel: no local filesystem access — fetch WASM from CDN
-  // On Termux/local: use bundled WASM from node_modules
-  // Always use local bundled WASM — never fetch from CDN.
-  // On Vercel, ncc bundles node_modules/sql.js/dist/** via includeFiles in vercel.json.
-  const SQL = await initSqlJs({
-    locateFile: file => require('path').join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+  _client = new MongoClient(MONGO_URI, {
+    maxPoolSize: 5,
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 10000,
+    socketTimeoutMS: 30000,
   });
-  _DB = fs.existsSync(DB_FILE)
-    ? new SQL.Database(fs.readFileSync(DB_FILE))
-    : new SQL.Database();
+  await _client.connect();
+  _db     = _client.db('bdnewsmap');
+  _bucket = new GridFSBucket(_db, { bucketName: 'newsImages' });
 
-  _DB.run('PRAGMA foreign_keys=ON;');
-  _DB.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      phone         TEXT    UNIQUE NOT NULL,
-      username      TEXT    UNIQUE NOT NULL COLLATE NOCASE,
-      password_hash TEXT    NOT NULL,
-      trust_score   REAL    NOT NULL DEFAULT 1.0,
-      banned        INTEGER NOT NULL DEFAULT 0,
-      created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-    CREATE TABLE IF NOT EXISTS news (
-      id          TEXT    PRIMARY KEY,
-      owner_id    INTEGER NOT NULL DEFAULT 0,
-      title       TEXT    NOT NULL,
-      description TEXT    NOT NULL DEFAULT '',
-      lat         REAL    NOT NULL,
-      lon         REAL    NOT NULL,
-      cell_key    TEXT    UNIQUE,
-      gh_chunk    TEXT,
-      gh_sub      TEXT,
-      gh_cell     TEXT,
-      links       TEXT    NOT NULL DEFAULT '',
-      image_count INTEGER NOT NULL DEFAULT 0,
-      thumb       TEXT    NOT NULL DEFAULT '',
-      created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-    CREATE TABLE IF NOT EXISTS votes (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
-      news_id  TEXT    NOT NULL,
-      user_id  INTEGER NOT NULL,
-      type     TEXT    NOT NULL CHECK(type IN ('real','fake')),
-      weight   REAL    NOT NULL DEFAULT 1.0,
-      voted_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      UNIQUE(news_id, user_id)
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    INTEGER NOT NULL,
-      news_id    TEXT    NOT NULL,
-      title      TEXT    NOT NULL,
-      dist_km    REAL    NOT NULL DEFAULT 0,
-      seen       INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_news_cell_key ON news(cell_key);
-    CREATE INDEX IF NOT EXISTS idx_news_cell    ON news(gh_cell);
-    CREATE INDEX IF NOT EXISTS idx_news_chunk   ON news(gh_chunk);
-    CREATE INDEX IF NOT EXISTS idx_news_lat     ON news(lat);
-    CREATE INDEX IF NOT EXISTS idx_news_created ON news(created_at);
-    CREATE INDEX IF NOT EXISTS idx_votes_news   ON votes(news_id);
-    CREATE INDEX IF NOT EXISTS idx_notif_user   ON notifications(user_id);
-  `);
+  // users
+  await users().createIndex({ phone:    1 }, { unique: true });
+  await users().createIndex({ username: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
 
-  const migs = [
-    "ALTER TABLE news ADD COLUMN cell_key TEXT",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_news_cell_key ON news(cell_key)",
-    "ALTER TABLE news ADD COLUMN gh_chunk TEXT",
-    "ALTER TABLE news ADD COLUMN gh_sub TEXT",
-    "ALTER TABLE news ADD COLUMN gh_cell TEXT",
-    "ALTER TABLE news ADD COLUMN image_count INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE news ADD COLUMN description TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE news ADD COLUMN links TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE news ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE news ADD COLUMN thumb TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE votes ADD COLUMN voted_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))",
-    "ALTER TABLE users ADD COLUMN phone TEXT",
-    "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone)",
-  ];
-  for(const m of migs){ try{_DB.run(m);}catch{} }
+  // news
+  await news().createIndex({ cell_key:   1 }, { unique: true, sparse: true });
+  await news().createIndex({ lat:        1 });
+  await news().createIndex({ lon:        1 });
+  await news().createIndex({ created_at: -1 });
+  await news().createIndex({ owner_id:   1 });
 
-  persistDB();
-  console.log('[DB]', DB_FILE);
+  // votes
+  await votes().createIndex({ news_id: 1, user_id: 1 }, { unique: true });
+  await votes().createIndex({ news_id: 1 });
+
+  // notifications
+  await notifications().createIndex({ user_id:    1 });
+  await notifications().createIndex({ created_at: -1 });
+
+  console.log('[DB] MongoDB connected');
   return true;
 }
 
-module.exports = { initDB, dbGet, dbAll, dbRun, persistDB, DATA_ROOT };
+async function closeDB() {
+  if (_client) await _client.close();
+}
+
+module.exports = { initDB, closeDB, users, news, votes, notifications, bucket, ObjectId };
