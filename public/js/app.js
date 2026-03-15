@@ -186,27 +186,14 @@ function switchTab(name){
   if(name==='admin')  loadAdmin();
 }
 
-// ── MARKER MANAGER — fixed 44px square cards (no zoom scaling) ──
-// Each card is a single divIcon square: same pixel size at every zoom.
-// No L.rectangle — the square border IS the cell indicator.
-const PIN_SQ = 44; // px — fixed, never changes with zoom
-function mkSqPin(col, thumb) {
-  const border = `2.5px solid ${col}`;
-  const bg = thumb
-    ? `background:url('${thumb}') center/cover no-repeat;`
-    : `background:var(--bg3);`;
-  return L.divIcon({
-    html: `<div style="width:${PIN_SQ}px;height:${PIN_SQ}px;border:${border};border-radius:6px;${bg}box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;">${!thumb ? '<span style="font-size:16px">📰</span>' : ''}</div>`,
-    iconSize: [PIN_SQ, PIN_SQ],
-    iconAnchor: [PIN_SQ/2, PIN_SQ/2],
-    className: '',
-  });
-}
-
+// ── MARKER MANAGER — geo-accurate 50×50m blocks, scale with zoom ──
+// Each news item is an L.imageOverlay (or SVG overlay) spanning exactly the
+// 50×50m cell bounds. It grows/shrinks naturally as you zoom — just like
+// any geo feature. No fixed-px icon. Clicking opens the map card.
 const NM={markers:{},_busy:false,
   reset(){
     Object.values(this.markers).forEach(m=>{
-      if(MAP && m.layer) MAP.removeLayer(m.layer);
+      if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.border)MAP.removeLayer(m.border);}
     });
     this.markers={};
   },
@@ -229,26 +216,68 @@ const NM={markers:{},_busy:false,
       const clat=+n.lat, clon=+n.lon;
       const diff=(+n.real_score)-(+n.fake_score);
       const col=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
+      // Cell bounds — exactly 50×50m in geo coordinates
+      const bounds=[
+        [clat-GRID_DLAT/2, clon-GRID_DLON/2],
+        [clat+GRID_DLAT/2, clon+GRID_DLON/2]
+      ];
       if(!this.markers[n.id]){
-        // Single fixed-pixel square marker — no rectangle, no zoom scaling
-        const layer=L.marker([clat,clon],{
-          icon:mkSqPin(col,n.thumb||''),
-          interactive:true,
-          keyboard:false,
+        // Colored border rectangle (always visible, even without image)
+        const border=L.rectangle(bounds,{
+          color:col,weight:2,opacity:0.9,
+          fillColor:col,fillOpacity:0.08,
+          interactive:false,
         }).addTo(MAP);
+        // Image overlay fills the exact 50×50m cell — scales with zoom
+        let layer;
+        if(n.thumb){
+          layer=L.imageOverlay(n.thumb, bounds, {
+            opacity:1, interactive:true, crossOrigin:'anonymous',
+            className:'nm-cell-img',
+          }).addTo(MAP);
+        } else {
+          // No image — just a semi-transparent colored fill that's clickable
+          layer=L.rectangle(bounds,{
+            color:col,weight:0,opacity:0,
+            fillColor:col,fillOpacity:0.22,
+            interactive:true,
+          }).addTo(MAP);
+          // Add a small centered label via a divIcon marker
+          const icon=L.divIcon({
+            html:`<div style="font-size:18px;line-height:1;pointer-events:none;">📰</div>`,
+            iconSize:[24,24],iconAnchor:[12,12],className:'',
+          });
+          const lbl=L.marker([clat,clon],{icon,interactive:false,keyboard:false}).addTo(MAP);
+          this.markers[n.id]={layer,border,lbl,col,thumb:''};
+          layer.on('click',()=>openMapCard(n.id));
+          border.on('click',()=>openMapCard(n.id));
+          return;
+        }
         layer.on('click',()=>openMapCard(n.id));
-        this.markers[n.id]={layer,col,thumb:n.thumb||''};
+        border.on('click',()=>openMapCard(n.id));
+        this.markers[n.id]={layer,border,lbl:null,col,thumb:n.thumb||''};
       } else {
         const m=this.markers[n.id];
-        if(col!==m.col||m.thumb!==n.thumb){
-          m.layer.setIcon(mkSqPin(col,n.thumb||''));
-          m.col=col;m.thumb=n.thumb||'';
+        // Update color if score changed
+        if(col!==m.col){
+          m.border.setStyle({color:col,fillColor:col});
+          if(m.layer.setStyle) m.layer.setStyle({fillColor:col});
+          m.col=col;
+        }
+        // Update image if thumb changed
+        if(n.thumb&&n.thumb!==m.thumb){
+          if(m.layer.setUrl) m.layer.setUrl(n.thumb);
+          m.thumb=n.thumb;
         }
       }
     });
     Object.entries(this.markers).forEach(([id,m])=>{
       if(!seen.has(id)){
-        if(MAP && m.layer) MAP.removeLayer(m.layer);
+        if(MAP){
+          if(m.layer)MAP.removeLayer(m.layer);
+          if(m.border)MAP.removeLayer(m.border);
+          if(m.lbl)MAP.removeLayer(m.lbl);
+        }
         delete this.markers[id];
       }
     });
@@ -268,7 +297,7 @@ async function initMap(){
   L.control.zoom({position:'bottomright'}).addTo(MAP);
   requestAnimationFrame(()=>requestAnimationFrame(()=>{MAP.invalidateSize();drawUser(lat,lon);trigLoad();}));
   MAP.on('moveend',()=>{clearTimeout(_mpd);_mpd=setTimeout(trigLoad,400);});
-  // zoomend: no rect resizing needed — markers are fixed-pixel squares
+  MAP.on('zoomend',()=>{if(MAP)NM._apply(CACHE.markers,MAP.getZoom());});
 }
 function trigLoad(){if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());}
 function forceMapRefresh(){CACHE.invalidate();if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());toast('🔄 Refreshed');}
