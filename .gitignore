@@ -1,7 +1,2 @@
 node_modules/
-logs/
 .env
-*.db
-*.db.tmp
-uploads/
-news_data/

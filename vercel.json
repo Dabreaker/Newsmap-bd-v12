@@ -1,18 +1,7 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "server.js", "use": "@vercel/node" },
-    { "src": "public/**", "use": "@vercel/static" }
-  ],
-  "routes": [
-    { "src": "/",            "dest": "/public/index.html" },
-    { "src": "/index.html",  "dest": "/public/index.html" },
-    { "src": "/js/(.*)",     "dest": "/public/js/$1" },
-    { "src": "/api/(.*)",    "dest": "/server.js" },
-    { "src": "/(.*)",        "dest": "/server.js" }
-  ],
-  "env": {
-    "MONGO_URI": "@mongo_uri",
-    "JWT_SECRET": "@jwt_secret"
-  }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server.js" },
+    { "source": "/(.*)",     "destination": "/public/$1" }
+  ]
 }
