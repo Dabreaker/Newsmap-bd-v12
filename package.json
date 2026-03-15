@@ -1,7 +1,7 @@
 {
-  "name": "bd-news-map-v15",
+  "name": "bd-news-map-v16",
   "version": "1.0.0",
-  "description": "BD News Map v15 — সংবাদ হোক দালাল মুক্ত।",
+  "description": "BD News Map v16 — সংবাদ হোক দালাল মুক্ত।",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

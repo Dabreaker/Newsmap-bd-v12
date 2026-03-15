@@ -56,9 +56,10 @@ async function initDB() {
       description TEXT    NOT NULL DEFAULT '',
       lat         REAL    NOT NULL,
       lon         REAL    NOT NULL,
+      cell_key    TEXT    UNIQUE,
       gh_chunk    TEXT,
       gh_sub      TEXT,
-      gh_cell     TEXT    UNIQUE,
+      gh_cell     TEXT,
       links       TEXT    NOT NULL DEFAULT '',
       image_count INTEGER NOT NULL DEFAULT 0,
       thumb       TEXT    NOT NULL DEFAULT '',
@@ -82,6 +83,7 @@ async function initDB() {
       seen       INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
+    CREATE INDEX IF NOT EXISTS idx_news_cell_key ON news(cell_key);
     CREATE INDEX IF NOT EXISTS idx_news_cell    ON news(gh_cell);
     CREATE INDEX IF NOT EXISTS idx_news_chunk   ON news(gh_chunk);
     CREATE INDEX IF NOT EXISTS idx_news_lat     ON news(lat);
@@ -91,6 +93,8 @@ async function initDB() {
   `);
 
   const migs = [
+    "ALTER TABLE news ADD COLUMN cell_key TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_news_cell_key ON news(cell_key)",
     "ALTER TABLE news ADD COLUMN gh_chunk TEXT",
     "ALTER TABLE news ADD COLUMN gh_sub TEXT",
     "ALTER TABLE news ADD COLUMN gh_cell TEXT",

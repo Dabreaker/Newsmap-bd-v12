@@ -6,7 +6,6 @@ const express =require('express');
 const jwt     =require('jsonwebtoken');
 const bcrypt  =require('bcryptjs');
 const multer  =require('multer');
-const ngeohash=require('ngeohash');
 const cron    =require('node-cron');
 const {initDB,dbGet,dbAll,dbRun,DATA_ROOT}=require('./db');
 const log =require('./middleware/logger');
@@ -17,10 +16,22 @@ const JWT_SECRET=process.env.JWT_SECRET||'jonatar-barta-secret';
 const PROX_KM   =5;
 const PURGE_TTL =36*3600;
 const DELETE_TTL=3*3600;
-const GH_L5=5,GH_L9=9;
-const EXCL_M=50; // 50m×50m exclusivity zone per news item
 const MAX_BYTES=10*1024*1024*1024;
 const IS_VERCEL=!!process.env.VERCEL;
+
+// ── 50×50m Grid ───────────────────────────────────────────────
+// Fixed ref latitude 23.5° (center of Bangladesh) keeps dlon consistent
+const GRID_DLAT = 50 / 111000;
+const GRID_DLON = 50 / (111000 * Math.cos(23.5 * Math.PI / 180));
+function snapToCell(lat, lon) {
+  const ci = Math.floor(lat / GRID_DLAT);
+  const cj = Math.floor(lon / GRID_DLON);
+  return {
+    lat: (ci + 0.5) * GRID_DLAT,
+    lon: (cj + 0.5) * GRID_DLON,
+    key: `${ci}:${cj}`,
+  };
+}
 const NEWS_DATA=path.join(DATA_ROOT,'news_data');
 const LOGS_DIR=path.join(IS_VERCEL?'/tmp':__dirname,'logs');
 const CREDS_FILE=path.join(__dirname,'credentials.json');
@@ -120,27 +131,28 @@ app.post('/api/news',auth,upload.array('images',10),(req,res)=>{
   if(!title||!lat||!lon)return res.status(400).json({error:'শিরোনাম, অবস্থান আবশ্যক'});
   const flat=parseFloat(lat),flon=parseFloat(lon),ulat=parseFloat(user_lat),ulon=parseFloat(user_lon);
   if(isNaN(flat)||isNaN(flon)||isNaN(ulat)||isNaN(ulon))return res.status(400).json({error:'অবৈধ স্থানাঙ্ক'});
-  const pd=hav(ulat,ulon,flat,flon);
-  if(pd>PROX_KM)return res.status(403).json({error:`পিন ${pd.toFixed(2)} কিমি দূরে (সীমা: ${PROX_KM} কিমি)`});
+
+  // Snap pin to 50×50m grid cell center
+  const cell=snapToCell(flat,flon);
+  const slat=cell.lat,slon=cell.lon,ckey=cell.key;
+
+  // Must be within 5km of the snapped cell center
+  const pd=hav(ulat,ulon,slat,slon);
+  if(pd>PROX_KM)return res.status(403).json({error:`ঘর ${pd.toFixed(2)} কিমি দূরে (সীমা: ${PROX_KM} কিমি)`});
   if(dirSize(NEWS_DATA)>=MAX_BYTES)return res.status(507).json({error:'স্টোরেজ সীমা পূর্ণ'});
-  // 400m×400m exclusivity: reject if any existing news is within 400m
-  const excl_dlat=EXCL_M/111000, excl_dlon=EXCL_M/(111000*Math.cos(flat*Math.PI/180));
-  const nearby=dbAll(
-    `SELECT id,lat,lon FROM news WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?`,
-    [flat-excl_dlat,flat+excl_dlat,flon-excl_dlon,flon+excl_dlon]
-  );
-  const conflict=nearby.find(n=>hav(flat,flon,+n.lat,+n.lon)*1000<EXCL_M);
-  if(conflict)return res.status(409).json({error:`এই স্থান থেকে ${EXCL_M}মি এর মধ্যে ইতিমধ্যে একটি সংবাদ আছে`});
-  const gh_cell=ngeohash.encode(flat,flon,GH_L9);
-  const id=uid(),gh_chunk=ngeohash.encode(flat,flon,GH_L5),gh_sub=ngeohash.encode(flat,flon,6),now=Math.floor(Date.now()/1000);
+
+  // One news per cell — enforced at DB level (UNIQUE cell_key) and checked here for a clean error
+  const occupied=dbGet('SELECT id FROM news WHERE cell_key=?',[ckey]);
+  if(occupied)return res.status(409).json({error:'এই ঘরটি ইতিমধ্যে পূর্ণ — পাশের ঘর বেছে নিন'});
+
+  const id=uid(),now=Math.floor(Date.now()/1000);
   let imgs=[];try{imgs=saveImgs(id,req.files||[]);}catch(e){return res.status(500).json({error:'ছবি সংরক্ষণ ব্যর্থ'});}
-  const meta={id,owner_id:req.user.id,username:req.user.username,title:title.trim(),description:(description||'').trim(),lat:flat,lon:flon,gh_chunk,gh_sub,gh_cell,links:(links||'').trim(),image_count:imgs.length,images:imgs,thumb:imgs[0]||'',created_at:now};
+  const meta={id,owner_id:req.user.id,username:req.user.username,title:title.trim(),description:(description||'').trim(),lat:slat,lon:slon,cell_key:ckey,links:(links||'').trim(),image_count:imgs.length,images:imgs,thumb:imgs[0]||'',created_at:now};
   try{writeMeta(id,meta);}catch(e){return res.status(500).json({error:'রেকর্ড সংরক্ষণ ব্যর্থ'});}
-  try{dbRun(`INSERT INTO news(id,owner_id,title,description,lat,lon,gh_chunk,gh_sub,gh_cell,links,image_count,thumb,created_at)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[id,req.user.id,meta.title,meta.description,flat,flon,gh_chunk,gh_sub,gh_cell,meta.links,imgs.length,imgs[0]||'',now]);}catch(e){log.error('DB INSERT',e.message);}
-  // Notify nearby users
-  notifyNearby(id,meta.title,flat,flon,req.user.id);
-  log.info('NEWS',id,`imgs=${imgs.length}`);
-  res.json({id,gh_cell,image_count:imgs.length});
+  try{dbRun(`INSERT INTO news(id,owner_id,title,description,lat,lon,cell_key,links,image_count,thumb,created_at)VALUES(?,?,?,?,?,?,?,?,?,?,?)`,[id,req.user.id,meta.title,meta.description,slat,slon,ckey,meta.links,imgs.length,imgs[0]||'',now]);}catch(e){log.error('DB INSERT',e.message);}
+  notifyNearby(id,meta.title,slat,slon,req.user.id);
+  log.info('NEWS',id,`cell=${ckey} imgs=${imgs.length}`);
+  res.json({id,cell_key:ckey,image_count:imgs.length});
 });
 
 // ── REGION — 10km×10km ────────────────────────────────────────
@@ -148,9 +160,9 @@ app.get('/api/region',(req,res)=>{
   const flat=parseFloat(req.query.lat),flon=parseFloat(req.query.lon);
   if(isNaN(flat)||isNaN(flon))return res.status(400).json({error:'lat/lon required'});
   const dlat=0.09,dlon=0.10,cutoff=Math.floor(Date.now()/1000)-PURGE_TTL;
-  const rows=dbAll(`SELECT id,owner_id,lat,lon,gh_cell,title,description,image_count,thumb,created_at FROM news WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at>? ORDER BY created_at DESC LIMIT 2000`,[flat-dlat,flat+dlat,flon-dlon,flon+dlon,cutoff]);
+  const rows=dbAll(`SELECT id,owner_id,lat,lon,cell_key,title,description,image_count,thumb,created_at FROM news WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at>? ORDER BY created_at DESC LIMIT 2000`,[flat-dlat,flat+dlat,flon-dlon,flon+dlon,cutoff]);
   const scored=withScores(rows);
-  const markers=scored.map(n=>({id:n.id,lat:n.lat,lon:n.lon,gh_cell:n.gh_cell,thumb:n.thumb,title:n.title,real_score:n.real_score,fake_score:n.fake_score,created_at:n.created_at}));
+  const markers=scored.map(n=>({id:n.id,lat:n.lat,lon:n.lon,cell_key:n.cell_key,thumb:n.thumb,title:n.title,real_score:n.real_score,fake_score:n.fake_score,created_at:n.created_at}));
   const feed=[...scored].sort((a,b)=>(b.real_score-b.fake_score)-(a.real_score-a.fake_score)).slice(0,20);
   res.json({markers,feed,total:scored.length,ts:Date.now()});
 });
@@ -159,7 +171,7 @@ app.get('/api/region',(req,res)=>{
 app.get('/api/news/nearby',(req,res)=>{
   const flat=parseFloat(req.query.lat),flon=parseFloat(req.query.lon);
   if(isNaN(flat)||isNaN(flon))return res.status(400).json({error:'lat/lon required'});
-  res.json(dbAll(`SELECT id,lat,lon,gh_cell FROM news WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? LIMIT 200`,[flat-0.009,flat+0.009,flon-0.010,flon+0.010]));
+  res.json(dbAll(`SELECT id,lat,lon,cell_key FROM news WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? LIMIT 200`,[flat-0.009,flat+0.009,flon-0.010,flon+0.010]));
 });
 
 // ── MY NEWS ───────────────────────────────────────────────────
@@ -230,7 +242,7 @@ app.get('/api/admin/stats',adminAuth,(req,res)=>{
     user_count:dbAll('SELECT COUNT(*) as c FROM users')[0]?.c||0,
     vote_count:dbAll('SELECT COUNT(*) as c FROM votes')[0]?.c||0,
     banned_count:dbAll('SELECT COUNT(*) as c FROM users WHERE banned=1')[0]?.c||0,
-    version:'v15',
+    version:'v16',
   });
 });
 
@@ -267,7 +279,7 @@ app.delete('/api/admin/users/:id/news',adminAuth,(req,res)=>{
 
 app.get('/api/status',(req,res)=>{
   const used=dirSize(NEWS_DATA);
-  res.json({storage_used_gb:+(used/1e9).toFixed(3),storage_max_gb:10,storage_pct:+((used/MAX_BYTES)*100).toFixed(1),news_count:dbAll('SELECT COUNT(*) as c FROM news')[0]?.c||0,version:'v15'});
+  res.json({storage_used_gb:+(used/1e9).toFixed(3),storage_max_gb:10,storage_pct:+((used/MAX_BYTES)*100).toFixed(1),news_count:dbAll('SELECT COUNT(*) as c FROM news')[0]?.c||0,version:'v16'});
 });
 
 // ── REAPER ────────────────────────────────────────────────────
@@ -285,10 +297,10 @@ if(!IS_VERCEL){
 // ── BOOT ──────────────────────────────────────────────────────
 initDB().then(()=>{
   _dbReady=true;_dbRes();
-  if(fs.existsSync(NEWS_DATA)){let r=0;for(const id of fs.readdirSync(NEWS_DATA)){const m=readMeta(id);if(!m)continue;if(!dbGet('SELECT id FROM news WHERE id=?',[m.id])){try{dbRun(`INSERT INTO news(id,owner_id,title,description,lat,lon,gh_chunk,gh_sub,gh_cell,links,image_count,thumb,created_at)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[m.id,m.owner_id,m.title,m.description||'',m.lat,m.lon,m.gh_chunk,m.gh_sub,m.gh_cell||null,m.links||'',m.image_count||0,(m.images||[])[0]||'',m.created_at]);r++;}catch(e){log.error('REBUILD',id,e.message);}}}if(r)log.info(`Boot: rebuilt ${r}`);}
+  if(fs.existsSync(NEWS_DATA)){let r=0;for(const id of fs.readdirSync(NEWS_DATA)){const m=readMeta(id);if(!m)continue;if(!dbGet('SELECT id FROM news WHERE id=?',[m.id])){const cell=snapToCell(m.lat,m.lon);try{dbRun(`INSERT INTO news(id,owner_id,title,description,lat,lon,cell_key,links,image_count,thumb,created_at)VALUES(?,?,?,?,?,?,?,?,?,?,?)`,[m.id,m.owner_id,m.title,m.description||'',cell.lat,cell.lon,m.cell_key||cell.key,m.links||'',m.image_count||0,(m.images||[])[0]||'',m.created_at]);r++;}catch(e){log.error('REBUILD',id,e.message);}}}if(r)log.info(`Boot: rebuilt ${r}`);}
   const creds=loadCreds();log.info(`Credentials: ${creds.length} accounts, ${creds.filter(c=>c.admin).length} admin(s)`);
-  if(!IS_VERCEL){app.listen(PORT,()=>{log.info('BD News Map v15 → http://localhost:'+PORT);log.info('Storage: '+(dirSize(NEWS_DATA)/1e6).toFixed(1)+' MB');});}
-  else log.info('BD News Map v15 on Vercel');
+  if(!IS_VERCEL){app.listen(PORT,()=>{log.info('BD News Map v16 → http://localhost:'+PORT);log.info('Storage: '+(dirSize(NEWS_DATA)/1e6).toFixed(1)+' MB');});}
+  else log.info('BD News Map v16 on Vercel');
 }).catch(e=>{console.error('FATAL DB INIT:',e);_dbRej(e);});
 
 module.exports=app;
