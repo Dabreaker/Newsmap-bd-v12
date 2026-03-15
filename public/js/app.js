@@ -1,5 +1,5 @@
 'use strict';
-// BD News Map v11
+// BD News Map v15
 
 // ══════════════════════════════════════════════════════════════
 // I18N — English / Bengali
@@ -8,9 +8,10 @@ const I18N={
   bn:{
     home:'হোম',map:'মানচিত্র',explore:'অন্বেষণ',notif:'বিজ্ঞপ্তি',
     notif_short:'বিজ্ঞপ্তি',account:'আমার অ্যাকাউন্ট',report:'সংবাদ রিপোর্ট',
-    report_short:'রিপোর্ট',me:'আমি',login_sub:'সংবাদ রিপোর্ট করতে লগইন করুন',
-    phone:'ফোন নম্বর',password:'পাসওয়ার্ড',enter:'প্রবেশ করুন',
-    auth_hint:'শুধুমাত্র অনুমোদিত সদস্যরা প্রবেশ করতে পারবেন',
+    report_short:'রিপোর্ট',me:'আমি',login_sub:'লগইন বা নিবন্ধন করুন',
+    phone:'ফোন নম্বর',password:'পাসওয়ার্ড',enter:'লগইন করুন',
+    auth_hint:'যেকেউ নিবন্ধন করতে পারবেন',
+    register:'নিবন্ধন করুন',have_account:'ইতিমধ্যে অ্যাকাউন্ট আছে?',no_account:'নতুন ব্যবহারকারী?',
     title:'শিরোনাম *',desc:'বিবরণ',publish:'প্রকাশ করুন',
     pull_refresh:'টেনে ধরুন রিফ্রেশ করতে',tagline:'সত্য সংবাদ · সত্যিকার মানুষ',
     explore_sub:'আশেপাশের সব সংবাদ',notif_sub:'আশেপাশের নতুন সংবাদ',
@@ -27,13 +28,15 @@ const I18N={
     bookmarks:'সংরক্ষিত সংবাদ',no_bookmarks:'এখনো কিছু সংরক্ষণ করেননি।',
     history:'আমার সংবাদ',no_history:'আপনি এখনো কোনো সংবাদ পোস্ট করেননি।',
     notif_empty:'কোনো বিজ্ঞপ্তি নেই।',mark_seen:'সব পড়া হয়েছে ✓',
+    zoom_hint:'জুম করুন — সংবাদ দেখতে (জুম ১৩+)',
   },
   en:{
     home:'Home',map:'Map',explore:'Explore',notif:'Notifications',
     notif_short:'Notifs',account:'My Account',report:'Report News',
-    report_short:'Report',me:'Me',login_sub:'Login to report news',
-    phone:'Phone Number',password:'Password',enter:'Sign In',
-    auth_hint:'Only approved members can log in',
+    report_short:'Report',me:'Me',login_sub:'Login or register',
+    phone:'Phone Number',password:'Password',enter:'Login',
+    auth_hint:'Anyone can register',
+    register:'Register',have_account:'Already have an account?',no_account:'New user?',
     title:'Title *',desc:'Description',publish:'Publish',
     pull_refresh:'Pull down to refresh',tagline:'True News · Real People',
     explore_sub:'All news nearby',notif_sub:'New news nearby',
@@ -50,6 +53,7 @@ const I18N={
     bookmarks:'Saved News',no_bookmarks:'Nothing saved yet.',
     history:'My Reports',no_history:'You have not posted any news yet.',
     notif_empty:'No notifications yet.',mark_seen:'Mark all read',
+    zoom_hint:'Zoom in to see news (zoom 13+)',
   }
 };
 let LANG=localStorage.getItem('jb_lang')||'bn';
@@ -124,13 +128,14 @@ function setMapFilter(f){
 
 // ── UTILS ─────────────────────────────────────────────────────
 function hav(la1,lo1,la2,lo2){const R=6371,r=d=>d*Math.PI/180;const a=Math.sin(r(la2-la1)/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(r(lo2-lo1)/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
-function cellPx(zoom,lat){const mpp=156543.034*Math.cos((lat||23.8)*Math.PI/180)/Math.pow(2,zoom);return Math.max(28,Math.round(200/mpp));}
-function mkPin(size,cls,thumb){
+const PIN_SIZE=44; // fixed px — same at every zoom level
+function mkPin(cls,thumb){
+  const half=22; // PIN_SIZE/2 — integer, center locked to coordinate
   const bg=thumb?`background-image:url('${thumb}');background-size:cover;background-position:center;`:'';
   return L.divIcon({
-    html:`<div class="nm-pin ${cls}" style="width:${size}px;height:${size}px;${bg}">${!thumb?'<div class="nm-noimg">📰</div>':''}</div>`,
-    iconSize:[size,size],
-    iconAnchor:[size/2,size/2],  // centered — square sits exactly on coordinates
+    html:`<div class="nm-pin ${cls}" style="width:${PIN_SIZE}px;height:${PIN_SIZE}px;${bg}">${!thumb?'<div class="nm-noimg">📰</div>':''}</div>`,
+    iconSize:[PIN_SIZE,PIN_SIZE],
+    iconAnchor:[half,half],
     className:'',
   });
 }
@@ -168,6 +173,7 @@ function switchTab(name){
   document.querySelectorAll('.tbb,.dn-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
   const el=document.getElementById('screen-'+name);if(el)el.classList.add('active');
   S.activeTab=name;
+  if(name!=='map')closeMapCard();
   if(name==='home'){showVerse('vh');loadHome();}
   if(name==='map')  initMap();
   if(name==='explore'){loadExplore();}
@@ -177,29 +183,79 @@ function switchTab(name){
   if(name==='admin')  loadAdmin();
 }
 
-// ── MARKER MANAGER (10km, filtered) ──────────────────────────
+// ── MARKER MANAGER — 50×50m grid blocks ──────────────────────
 const NM={markers:{},_busy:false,
-  reset(){Object.values(this.markers).forEach(m=>{if(MAP)MAP.removeLayer(m.layer);});this.markers={};},
-  async update(center,zoom){if(this._busy)return;this._busy=true;try{await CACHE.load(center.lat,center.lng);this._apply(CACHE.markers,zoom,center.lat);}finally{this._busy=false;}},
-  _apply(data,zoom,lat){
-    const seen=new Set(),sz=cellPx(zoom,lat||23.8);
+  reset(){
+    Object.values(this.markers).forEach(m=>{
+      if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
+    });
+    this.markers={};
+  },
+  async update(center,zoom){if(this._busy)return;this._busy=true;try{await CACHE.load(center.lat,center.lng);this._apply(CACHE.markers,zoom);}finally{this._busy=false;}},
+  _apply(data,zoom){
+    const seen=new Set();
+    // Hide everything when zoomed past ~20km view
+    if(zoom<=12){
+      this.reset();
+      const el=document.getElementById('map-info');
+      if(el)el.textContent='🔍 '+t('zoom_hint');
+      return;
+    }
+    // 50m half-deltas for rectangle
+    const refLat=(S.userLat||23.8);
+    const dlat=50/111000/2;
+    const dlon=50/(111000*Math.cos(refLat*Math.PI/180))/2;
+
     const filtered=data.filter(n=>{
       if(MAP_FILTER==='real')return(+n.real_score)>(+n.fake_score);
       if(MAP_FILTER==='fake')return(+n.fake_score)>(+n.real_score);
       return true;
     });
+
     filtered.forEach(n=>{
       seen.add(n.id);
-      const diff=(+n.real_score)-(+n.fake_score),cls=diff>2?'pr':diff<-2?'pf':'pn';
+      const flat=+n.lat,flon=+n.lon;
+      const diff=(+n.real_score)-(+n.fake_score);
+      const cls=diff>2?'pr':diff<-2?'pf':'pn';
+      const rectColor=diff>2?'#00d496':diff<-2?'#ff4b6e':'#4c7bff';
+      const nlat=flat+(flat-refLat>0?1:-1)*0; // use news lat for per-cell dlon
+      const cdlat=50/111000/2;
+      const cdlon=50/(111000*Math.cos(flat*Math.PI/180))/2;
+
       if(!this.markers[n.id]){
-        const layer=L.marker([+n.lat,+n.lon],{icon:mkPin(sz,cls,n.thumb||'')}).addTo(MAP);
-        layer.on('click',()=>{MAP.flyTo([+n.lat,+n.lon],Math.max(MAP.getZoom(),18),{duration:0.4});openModal(n.id);});
-        this.markers[n.id]={layer,cls,thumb:n.thumb||''};
+        // Draw 50×50m rectangle grid block
+        const rect=L.rectangle(
+          [[flat-cdlat,flon-cdlon],[flat+cdlat,flon+cdlon]],
+          {color:rectColor,weight:1.5,opacity:0.7,fillColor:rectColor,fillOpacity:0.08,interactive:true}
+        ).addTo(MAP);
+        rect.on('click',()=>{MAP.flyTo([flat,flon],Math.max(MAP.getZoom(),18),{duration:0.4});openMapCard(n.id);});
+
+        // Fixed 44px card centered exactly on coordinate
+        const layer=L.marker([flat,flon],{icon:mkPin(cls,n.thumb||''),interactive:true}).addTo(MAP);
+        layer.on('click',()=>{MAP.flyTo([flat,flon],Math.max(MAP.getZoom(),18),{duration:0.4});openMapCard(n.id);});
+
+        this.markers[n.id]={layer,rect,cls,thumb:n.thumb||''};
+      } else {
+        // Update color if score changed
+        const m=this.markers[n.id];
+        if(cls!==m.cls||m.thumb!==n.thumb){
+          m.layer.setIcon(mkPin(cls,n.thumb||''));
+          m.rect.setStyle({color:rectColor,fillColor:rectColor});
+          m.cls=cls;m.thumb=n.thumb||'';
+        }
       }
     });
-    Object.entries(this.markers).forEach(([id,m])=>{if(!seen.has(id)){if(MAP)MAP.removeLayer(m.layer);delete this.markers[id];}});
-    Object.values(this.markers).forEach(({layer,cls,thumb})=>layer.setIcon(mkPin(sz,cls,thumb)));
-    const el=document.getElementById('map-info');if(el)el.textContent=`📡 ${Object.keys(this.markers).length} / ${data.length}`;
+
+    // Remove markers no longer in filtered set
+    Object.entries(this.markers).forEach(([id,m])=>{
+      if(!seen.has(id)){
+        if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}
+        delete this.markers[id];
+      }
+    });
+
+    const el=document.getElementById('map-info');
+    if(el)el.textContent=`📡 ${Object.keys(this.markers).length} / ${data.length}`;
   }
 };
 
@@ -240,19 +296,19 @@ async function initReportMap(){
     const plat=e.latlng.lat,plon=e.latlng.lng,dist=hav(lat,lon,plat,plon),inRange=dist<=5;
     S.reportLat=plat;S.reportLon=plon;S.pinInRange=inRange;
     rPinGroup.clearLayers();
-    // Draw 400m exclusivity zone rectangle
-    const c400lat=400/111000/2, c400lon=400/(111000*Math.cos(plat*Math.PI/180))/2;
-    L.rectangle([[plat-c400lat,plon-c400lon],[plat+c400lat,plon+c400lon]],{color:inRange?'#00d496':'#ff4b6e',weight:2,dashArray:'5 4',fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:0.08}).addTo(rPinGroup);
+    // Draw 50m exclusivity zone rectangle
+    const c50lat=50/111000/2, c50lon=50/(111000*Math.cos(plat*Math.PI/180))/2;
+    L.rectangle([[plat-c50lat,plon-c50lon],[plat+c50lat,plon+c50lon]],{color:inRange?'#00d496':'#ff4b6e',weight:2,dashArray:'5 4',fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:0.08}).addTo(rPinGroup);
     // Center dot
     L.circleMarker([plat,plon],{radius:5,color:'#fff',weight:2,fillColor:inRange?'#00d496':'#ff4b6e',fillOpacity:1}).addTo(rPinGroup);
     hint.style.display='none';st.style.display='block';
     if(!inRange){st.textContent=`${dist.toFixed(2)} ${t('km')} — ৫ কিমি সীমার বাইরে ✗`;st.className='rst-bad';return;}
     st.textContent='পরীক্ষা করছি…';st.className='';
     await CACHE.load(lat,lon);
-    // 400m exclusivity: reject if any cached news is within 400m
-    const occ=CACHE.markers.some(n=>hav(plat,plon,+n.lat,+n.lon)*1000<400);
-    if(occ){st.textContent=`এই স্থান থেকে ৪০০মি এর মধ্যে ইতিমধ্যে সংবাদ আছে ⚠`;st.className='rst-cell';S.pinInRange=false;}
-    else{st.textContent=`${dist.toFixed(2)} ${t('km')} — ৪০০মি জোন খালি ✓`;st.className='rst-ok';}
+    // 50m exclusivity: reject if any cached news is within 50m
+    const occ=CACHE.markers.some(n=>hav(plat,plon,+n.lat,+n.lon)*1000<50);
+    if(occ){st.textContent=`এই স্থান থেকে ৫০মি এর মধ্যে ইতিমধ্যে সংবাদ আছে ⚠`;st.className='rst-cell';S.pinInRange=false;}
+    else{st.textContent=`${dist.toFixed(2)} ${t('km')} — ৫০মি জোন খালি ✓`;st.className='rst-ok';}
   });
   setTimeout(()=>RMAP.invalidateSize(),120);
 }
@@ -283,7 +339,7 @@ async function submitReport(){
 }
 
 // ── DONATION ──────────────────────────────────────────────────
-function donationHTML(){return`<div class="donate-card glass"><div class="dc-head"><span style="font-size:22px">🤲</span><div><div style="font-weight:800;font-size:15px;color:var(--gold)">${t('help')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">BD News Map v11</div></div></div><p class="dc-msg">${t('help_msg')}</p><div class="dc-methods"><div class="dc-method" onclick="copyNum('bKash')"><div class="dc-logo" style="background:#E2136E">bK</div><div class="dc-info"><div class="dc-label">bKash</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Nagad')"><div class="dc-logo" style="background:#F7941D">Ng</div><div class="dc-info"><div class="dc-label">Nagad</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Rocket')"><div class="dc-logo" style="background:#8B1DB8">Rk</div><div class="dc-info"><div class="dc-label">Rocket</div><div class="dc-num">01710552580</div></div><div>📋</div></div></div><div class="dc-footer">সংবাদ হোক দালাল মুক্ত — BD News Map</div></div>`;}
+function donationHTML(){return`<div class="donate-card glass"><div class="dc-head"><span style="font-size:22px">🤲</span><div><div style="font-weight:800;font-size:15px;color:var(--gold)">${t('help')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">BD News Map v15</div></div></div><p class="dc-msg">${t('help_msg')}</p><div class="dc-methods"><div class="dc-method" onclick="copyNum('bKash')"><div class="dc-logo" style="background:#E2136E">bK</div><div class="dc-info"><div class="dc-label">bKash</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Nagad')"><div class="dc-logo" style="background:#F7941D">Ng</div><div class="dc-info"><div class="dc-label">Nagad</div><div class="dc-num">01710552580</div></div><div>📋</div></div><div class="dc-method" onclick="copyNum('Rocket')"><div class="dc-logo" style="background:#8B1DB8">Rk</div><div class="dc-info"><div class="dc-label">Rocket</div><div class="dc-num">01710552580</div></div><div>📋</div></div></div><div class="dc-footer">সংবাদ হোক দালাল মুক্ত — BD News Map</div></div>`;}
 function copyNum(svc){const n='01710552580';navigator.clipboard.writeText(n).then(()=>toast(svc+' '+t('copied')+': '+n)).catch(()=>toast(n));}
 
 // ── HOME ──────────────────────────────────────────────────────
@@ -366,12 +422,33 @@ function updateNotifBadge(n){
 }
 async function pollNotifications(){if(!S.token)return;const d=await api('GET','/api/notifications');if(!d.error)updateNotifBadge(d.unseen||0);}
 
-// ── MODAL ─────────────────────────────────────────────────────
+// ── MAP CARD OVERLAY (shown over the map, not a separate screen) ──
+async function openMapCard(newsId){
+  const panel=document.getElementById('map-card-panel');
+  const ct=document.getElementById('map-card-content');
+  if(!panel||!ct)return openModal(newsId); // fallback
+  ct.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
+  panel.classList.add('open');
+  const n=await api('GET','/api/news/'+newsId);
+  if(n.error){ct.innerHTML=`<div class="empty"><p>${esc(n.error)}</p></div>`;return;}
+  _renderNewsDetail(ct,n);
+}
+function closeMapCard(){
+  const panel=document.getElementById('map-card-panel');
+  if(panel)panel.classList.remove('open');
+}
+
+// ── MODAL (used from home/explore/notif tabs) ─────────────────
 async function openModal(newsId){
   const ol=document.getElementById('modal-overlay'),ct=document.getElementById('modal-content');
   ct.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';ol.classList.add('open');document.body.style.overflow='hidden';
   const n=await api('GET','/api/news/'+newsId);
   if(n.error){ct.innerHTML=`<div class="empty"><p>${esc(n.error)}</p></div>`;return;}
+  _renderNewsDetail(ct,n);
+}
+
+function _renderNewsDetail(ct,n){
+  const newsId=n.id;
   const dist=S.userLat!=null?hav(S.userLat,S.userLon,+n.lat,+n.lon):null;
   const canVote=S.token&&dist!=null&&dist<=5;
   const real=+(n.real_score||0),fake=+(n.fake_score||0),tot=real+fake,p=tot>0?Math.round((real/tot)*100):50;
@@ -409,32 +486,57 @@ async function openModal(newsId){
     ${linksHTML?`<div style="margin-bottom:11px"><div class="dlbl" style="margin-bottom:4px">📎 সূত্র</div><div class="mlinks">${linksHTML}</div></div>`:''}
     <div class="dgrid">
       <div class="ditem"><div class="dlbl">স্থানাঙ্ক</div><div class="dval" onclick="copyCoords('${coords}')" style="cursor:pointer;font-size:11px">${coords}</div></div>
-      <div class="ditem"><div class="dlbl">৪০০মি জোন</div><div class="dval" style="font-size:10px;word-break:break-all">${n.gh_cell||'—'}</div></div>
+      <div class="ditem"><div class="dlbl">৫০মি জোন</div><div class="dval" style="font-size:10px;word-break:break-all">${n.gh_cell||'—'}</div></div>
     </div>
     ${canDel?`<button class="bdel" onclick="delNews('${n.id}')">${S.admin&&!isOwner?'🛡 Admin':'🗑'} মুছুন${!S.admin?` (${Math.max(0,Math.round((10800-ageS)/60))} মিনিট)`:''}</button>`:''}`;
 }
 function closeModal(e){if(e.target===document.getElementById('modal-overlay')){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}}
 function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getElementById('bm-btn-'+id);if(btn)btn.innerHTML=s?`🔖 ${t('saved')}`:`🏷️ Save`;toast(s?t('saved'):t('unsaved'));}
-function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'BD News Map v11',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
+function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'BD News Map v15',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
 function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
-async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();openModal(nid);}
-async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';if(NM.markers[nid]){if(MAP)MAP.removeLayer(NM.markers[nid].layer);delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
+async function castVote(nid,type){if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}const r=await api('POST','/api/vote',{news_id:nid,type,user_lat:S.userLat,user_lon:S.userLon});if(r.error){toast(r.error,true);return;}toast(`✓ (weight: ${r.weight})`);CACHE.invalidate();if(S.activeTab==='map')openMapCard(nid);else openModal(nid);}
+async function delNews(nid){if(!confirm('মুছে ফেলবেন?'))return;const r=await api('DELETE','/api/news/'+nid);if(r.error){toast(r.error,true);return;}document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';closeMapCard();const m=NM.markers[nid];if(m){if(MAP){if(m.layer)MAP.removeLayer(m.layer);if(m.rect)MAP.removeLayer(m.rect);}delete NM.markers[nid];}CACHE.invalidate();toast('মুছে ফেলা হয়েছে');loadHome(true);}
 
 // ── AUTH ──────────────────────────────────────────────────────
-function openAuth(){document.getElementById('auth-overlay').classList.add('open');}
+let _authMode='login'; // 'login' | 'register'
+function openAuth(mode='login'){_authMode=mode;_setAuthMode(mode);document.getElementById('auth-overlay').classList.add('open');}
 function closeAuth(){document.getElementById('auth-overlay').classList.remove('open');S._authCb=null;}
 function closeAuthBg(e){if(e.target===document.getElementById('auth-overlay'))closeAuth();}
+function _setAuthMode(mode){
+  _authMode=mode;
+  const isReg=mode==='register';
+  document.getElementById('auth-btn').textContent=isReg?t('register'):t('enter');
+  const sub=document.getElementById('auth-mode-sub');
+  if(sub)sub.textContent=isReg?t('register'):t('enter');
+  document.getElementById('auth-toggle-text').innerHTML=isReg
+    ?`${t('have_account')} <a href="javascript:void(0)" onclick="_setAuthMode('login')" style="color:var(--accent);font-weight:700">${t('enter')}</a>`
+    :`${t('no_account')} <a href="javascript:void(0)" onclick="_setAuthMode('register')" style="color:var(--accent);font-weight:700">${t('register')}</a>`;
+}
 async function doAuth(e){
   if(e)e.preventDefault();
+  if(_authMode==='register'){doRegister();return;}
   const phone=document.getElementById('a-phone').value.trim(),password=document.getElementById('a-pass').value;
   if(!phone||!password){toast(t('phone')+' ও '+t('password')+' দিন',true);return;}
   const btn=document.getElementById('auth-btn');btn.disabled=true;btn.textContent='যাচাই করছি…';
   const r=await api('POST','/api/login',{phone,password});
   btn.disabled=false;btn.textContent=t('enter');
   if(r.error){toast(r.error,true);return;}
+  _authSuccess(r);
+}
+async function doRegister(){
+  const phone=document.getElementById('a-phone').value.trim(),password=document.getElementById('a-pass').value;
+  if(!phone||!password){toast(t('phone')+' ও '+t('password')+' দিন',true);return;}
+  if(password.length<6){toast('পাসওয়ার্ড কমপক্ষে ৬ অক্ষর',true);return;}
+  const btn=document.getElementById('auth-btn');btn.disabled=true;btn.textContent='নিবন্ধন হচ্ছে…';
+  const r=await api('POST','/api/register',{phone,password});
+  btn.disabled=false;btn.textContent=t('register');
+  if(r.error){toast(r.error,true);return;}
+  _authSuccess(r);
+}
+function _authSuccess(r){
   S.token=r.token;S.anon_id=r.anon_id||null;S.admin=!!r.admin;
   try{localStorage.setItem('jb_token',r.token);localStorage.setItem('jb_aid',String(r.anon_id||''));localStorage.setItem('jb_admin',r.admin?'1':'0');}catch{}
-  toast('লগইন সফল ✓');closeAuth();renderUser();
+  toast('✓ সফল');closeAuth();renderUser();
   if(S.admin)showAdminBtn();
   if(S._authCb){const cb=S._authCb;S._authCb=null;cb();}
   pollNotifications();
