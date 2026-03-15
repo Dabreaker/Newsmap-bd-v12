@@ -233,6 +233,15 @@ async function initMap(){
 }
 function trigLoad(){if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());}
 function forceMapRefresh(){CACHE.invalidate();if(MAP)NM.update(MAP.getCenter(),MAP.getZoom());toast('🔄 Refreshed');}
+function toggleMapFullscreen(){
+  const screen=document.getElementById('screen-map');
+  const btn=document.getElementById('map-fs-btn');
+  const isFs=screen.classList.toggle('fs');
+  btn.classList.toggle('active',isFs);
+  btn.textContent=isFs?'✕':'⛶';
+  btn.title=isFs?'Exit Fullscreen':'Fullscreen';
+  setTimeout(()=>{if(MAP)MAP.invalidateSize();},50);
+}
 function drawUser(lat,lon){
   if(uCircle){uCircle.remove();uDot&&uDot.remove();}
   uCircle=L.circle([lat,lon],{radius:5000,color:'#00d496',weight:1.5,opacity:.4,dashArray:'6 5',fillColor:'#00d496',fillOpacity:.03,interactive:false}).addTo(MAP);
@@ -567,11 +576,23 @@ async function loadAdmNews(q='',page=0){
   if(rows.length===30){const btn=document.createElement('button');btn.className='btn-p';btn.style.cssText='margin-top:10px;background:var(--glass);border:1px solid var(--border);color:var(--text);font-size:13px';btn.textContent='Load More';btn.onclick=()=>loadAdmNews(_admQ,_admPage+1);list.appendChild(btn);}
 }
 async function admDelNews(id,btn){if(!confirm('Delete this news?'))return;btn.disabled=true;const r=await api('DELETE','/api/admin/news/'+id);if(r.error){toast(r.error,true);btn.disabled=false;return;}btn.closest('.adm-row').remove();CACHE.invalidate();toast('Deleted ✓');}
-async function loadAdmUsers(){
+let _admUserFilter='all'; // 'all' | 'banned'
+async function loadAdmUsers(filter){
+  if(filter!==undefined)_admUserFilter=filter;
   const el=document.getElementById('adm-body');el.innerHTML='<div class="sp-box"><b></b><b></b><b></b></div>';
   const d=await api('GET','/api/admin/users');if(d.error){el.innerHTML=`<p style="color:var(--red)">${esc(d.error)}</p>`;return;}
-  if(!Array.isArray(d)||!d.length){el.innerHTML='<div class="empty"><p>No users yet.</p></div>';return;}
-  el.innerHTML=d.map(u=>`<div class="adm-row" id="urow-${u.id}">
+  if(!Array.isArray(d)){el.innerHTML='<div class="empty"><p>No users yet.</p></div>';return;}
+  const filtered=_admUserFilter==='banned'?d.filter(u=>u.banned):d;
+  const bannedCount=d.filter(u=>u.banned).length;
+  el.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button class="adm-tab ${_admUserFilter==='all'?'on':''}" onclick="loadAdmUsers('all')">👥 সবাই (${d.length})</button>
+      <button class="adm-tab ${_admUserFilter==='banned'?'on':''}" onclick="loadAdmUsers('banned')" style="${bannedCount?'border-color:var(--red);color:var(--red)':''}">🚫 নিষিদ্ধ (${bannedCount})</button>
+    </div>
+    <div id="adm-user-list"></div>`;
+  const list=document.getElementById('adm-user-list');
+  if(!filtered.length){list.innerHTML='<div class="empty"><p>কোনো ব্যবহারকারী নেই।</p></div>';return;}
+  list.innerHTML=filtered.map(u=>`<div class="adm-row" id="urow-${u.id}">
     <div style="font-size:24px;flex-shrink:0">${u.banned?'🚫':'👤'}</div>
     <div class="adm-row-info">
       <div class="adm-row-title">${esc(u.username||'')} ${u.banned?'<span style="color:var(--red);font-size:10px">[BANNED]</span>':''}</div>
