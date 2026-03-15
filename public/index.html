@@ -113,12 +113,12 @@ a{color:var(--accent);text-decoration:none}
 #map-wrap{flex:1;position:relative;min-height:0}
 #map{position:absolute;inset:0;background:var(--bg)}
 #map-info{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(8,12,24,0.9);color:var(--text);padding:5px 13px;border-radius:17px;font-size:11px;font-weight:600;border:1px solid var(--border);z-index:400;pointer-events:none;white-space:nowrap}
-#map-fab{position:absolute;bottom:18px;right:14px;z-index:500;width:44px;height:44px;border-radius:50%;background:var(--accent);box-shadow:0 4px 16px rgba(76,123,255,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px}
+#map-fab{position:absolute;top:10px;right:14px;z-index:500;width:44px;height:44px;border-radius:50%;background:var(--accent);box-shadow:0 4px 16px rgba(76,123,255,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px}
 #map-card-panel{position:absolute;bottom:0;left:0;right:0;z-index:600;background:var(--bg2);border-radius:22px 22px 0 0;border-top:1px solid var(--border);max-height:65dvh;overflow-y:auto;transform:translateY(100%);transition:transform .3s cubic-bezier(.2,.8,.4,1);pointer-events:none}
 #map-card-panel.open{transform:translateY(0);pointer-events:all}
 #map-card-handle{width:36px;height:4px;background:var(--border);border-radius:4px;margin:10px auto 0;cursor:pointer}
 #map-card-content{padding:4px 16px 28px}
-#map-filter{position:absolute;top:10px;right:14px;z-index:400;display:flex;flex-direction:column;gap:5px}
+#map-filter{position:absolute;top:10px;left:10px;z-index:400;display:flex;flex-direction:column;gap:5px}
 .mfbtn{background:rgba(8,12,24,0.9);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:10px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap}
 .mfbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
 /* nm-cell-img — image overlay filling exact 50×50m geo cell */
@@ -149,9 +149,9 @@ a{color:var(--accent);text-decoration:none}
 #modal-overlay.open{display:flex}
 #modal-content{width:100%;max-width:520px;margin:0 auto;background:var(--bg2);border-radius:22px 22px 0 0;border-top:1px solid var(--border);padding:16px 16px 32px;max-height:90dvh;overflow-y:auto;animation:sup .25s cubic-bezier(.2,.8,.4,1)}
 @keyframes sup{from{transform:translateY(60px);opacity:0}to{transform:translateY(0);opacity:1}}
-.mcar{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+.mcar{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
 .mcar::-webkit-scrollbar{display:none}
-.mslide{position:relative;flex-shrink:0;width:100%}
+.mslide{position:relative;flex-shrink:0;width:100%;scroll-snap-align:start}
 .mcar-n{position:absolute;top:6px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 7px;border-radius:8px}
 .noimgph{text-align:center;padding:24px 0 12px;font-size:13px;color:var(--muted)}
 .modal-actions{display:flex;gap:7px;margin-bottom:12px}
