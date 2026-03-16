@@ -623,6 +623,31 @@ async function loadAdmUsers(filter){
 async function admBan(uid,ban,btn){btn.disabled=true;const r=await api('POST',`/api/admin/users/${uid}/ban`,{ban});if(r.error){toast(r.error,true);btn.disabled=false;return;}toast(ban?`User ${uid} banned`:`User ${uid} unbanned`);loadAdmUsers();}
 async function admPurgeUser(uid,btn){if(!confirm(`Delete ALL news by user ${uid}?`))return;btn.disabled=true;const r=await api('DELETE',`/api/admin/users/${uid}/news`);if(r.error){toast(r.error,true);btn.disabled=false;return;}CACHE.invalidate();toast(`Deleted ${r.deleted} posts`);loadAdmUsers();}
 
+// ══ ORIENTATION / RESIZE FIX ══════════════════════════════════
+// When orientation changes the viewport dims shift — invalidate all maps
+// and force CSS custom property recalc (dvh changes on mobile browsers)
+function onOrientationChange(){
+  // Small delay so browser has finished resizing viewport
+  setTimeout(()=>{
+    // Resize both maps
+    if(MAP)MAP.invalidateSize();
+    if(RMAP)RMAP.invalidateSize();
+    // Force dvh recalc by briefly toggling a class
+    document.documentElement.classList.add('resizing');
+    requestAnimationFrame(()=>document.documentElement.classList.remove('resizing'));
+  },200);
+  // Second pass for slow devices
+  setTimeout(()=>{
+    if(MAP)MAP.invalidateSize();
+    if(RMAP)RMAP.invalidateSize();
+  },600);
+}
+window.addEventListener('orientationchange',onOrientationChange);
+window.addEventListener('resize',()=>{
+  clearTimeout(window._rto);
+  window._rto=setTimeout(onOrientationChange,150);
+});
+
 // ══ BOOT ═══════════════════════════════════════════════════════
 (async function init(){
   applyTheme();applyI18n();
