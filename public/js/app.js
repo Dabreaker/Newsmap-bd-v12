@@ -247,10 +247,14 @@ function locateMe(){if(!MAP)return;S.userLat=null;gps().then(r=>{if(!r)return;MA
 // ══ REPORT MAP ═════════════════════════════════════════════════
 let RMAP=null,rPinGroup=null,rMapReady=false;
 async function initReportMap(){
-  if(rMapReady){setTimeout(()=>{if(RMAP)RMAP.invalidateSize();},120);return;}
+  if(rMapReady){
+    // Already init — just resize in case container changed
+    setTimeout(()=>{if(RMAP){RMAP.invalidateSize();RMAP.scrollWheelZoom.enable();}},150);
+    return;
+  }
   rMapReady=true;
   const loc=await gps();const lat=loc?.lat||23.8103,lon=loc?.lon||90.4125;
-  RMAP=L.map('report-map',{zoomControl:true,tap:true}).setView([lat,lon],17);
+  RMAP=L.map('report-map',{zoomControl:true,tap:true,scrollWheelZoom:false}).setView([lat,lon],17);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:21,attribution:'&copy; OSM'}).addTo(RMAP);
   L.circle([lat,lon],{radius:5000,color:'#2563EB',weight:1.5,opacity:.5,dashArray:'7 5',fillColor:'#2563EB',fillOpacity:.04,interactive:false}).addTo(RMAP);
   L.circleMarker([lat,lon],{radius:9,color:'#fff',weight:2.5,fillColor:'#2563EB',fillOpacity:1,interactive:false}).addTo(RMAP);
@@ -271,7 +275,12 @@ async function initReportMap(){
     if(occ){if(st){st.textContent='এই ঘর পূর্ণ — পাশের ঘর বেছে নিন ⚠';st.className='rst-cell';}S.pinInRange=false;}
     else{if(st){st.textContent=`${dist.toFixed(2)} ${t('km')} — ঘর খালি ✓`;st.className='rst-ok';}}
   });
-  setTimeout(()=>{if(RMAP)RMAP.invalidateSize();},120);
+  // Invalidate after layout settles (important when map is inside a scroll container)
+  setTimeout(()=>{if(RMAP)RMAP.invalidateSize();},150);
+  setTimeout(()=>{if(RMAP)RMAP.invalidateSize();},400);
+  // Also invalidate on scroll (map may render after user scrolls to it)
+  const rscroll=document.querySelector('#screen-report .rscroll');
+  if(rscroll&&!rscroll._mapInv){rscroll._mapInv=true;rscroll.addEventListener('scroll',()=>{if(RMAP)RMAP.invalidateSize();},{passive:true});}
 }
 
 function prevImgs(input){const p=document.getElementById('img-prev');p.innerHTML='';[...input.files].slice(0,10).forEach(f=>{const i=document.createElement('img');i.src=URL.createObjectURL(f);p.appendChild(i);});}
