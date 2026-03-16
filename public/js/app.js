@@ -401,7 +401,7 @@ async function openModal(newsId){
   if(n.error){ct.innerHTML=`<div class="sheet-handle"></div><div class="empty"><p>${esc(n.error)}</p></div>`;return;}
   _renderNewsDetail(ct,n);
 }
-function closeModal(e){if(e.target===document.getElementById('modal-overlay')){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}}
+function closeModal(e){if(e.target===document.getElementById('modal-overlay')){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';if(location.hash.startsWith('#news/'))history.replaceState(null,'',location.pathname);}}
 
 function _renderNewsDetail(ct,n){
   const newsId=n.id;
@@ -452,7 +452,13 @@ function _renderNewsDetail(ct,n){
     </div>`;
 }
 function toggleBM(id,title){const s=BM.toggle(id,title);const btn=document.getElementById('bm-btn-'+id);if(btn)btn.innerHTML=s?`🔖 ${t('saved')}`:`🏷️ Save`;toast(s?t('saved'):t('unsaved'));}
-function shareNews(id,title){const url=`${location.origin}/#news/${id}`;if(navigator.share){navigator.share({title:title||'জনবার্তা',url}).catch(()=>{});}else{navigator.clipboard.writeText(url).then(()=>toast('Link copied')).catch(()=>toast(url));}}
+function shareNews(id,title){
+  const url=`${location.origin}/#news/${id}`;
+  // Update hash so the URL is shareable from browser bar too
+  history.replaceState(null,'',`#news/${id}`);
+  if(navigator.share){navigator.share({title:title||'জনবার্তা — '+title,url}).catch(()=>{});}
+  else{navigator.clipboard.writeText(url).then(()=>toast('🔗 লিংক কপি হয়েছে')).catch(()=>toast(url));}
+}
 function copyCoords(c){navigator.clipboard.writeText(c).then(()=>toast(t('copied')+': '+c)).catch(()=>toast(c));}
 async function castVote(nid,type){
   if(!S.token){openAuth();return;}if(S.userLat==null){toast(t('enable_loc'),true);return;}
@@ -655,4 +661,15 @@ window.addEventListener('resize',()=>{
   gps();showVerse('vh');loadHome();renderUser();initPTR();
   if(S.admin)showAdminBtn();
   if(S.token){pollNotifications();setInterval(pollNotifications,90000);}
+  // Handle shared news link: /#news/{id}
+  const hash=location.hash.match(/^#news\/(.+)$/);
+  if(hash){
+    // Wait for home to load then open the modal
+    setTimeout(()=>openModal(hash[1]),300);
+  }
+  // Also handle back/forward with hash changes
+  window.addEventListener('hashchange',()=>{
+    const h=location.hash.match(/^#news\/(.+)$/);
+    if(h)openModal(h[1]);
+  });
 })();
